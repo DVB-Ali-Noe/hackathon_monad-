@@ -43,6 +43,11 @@ const {
   calibrating, visible, movement,
 } = camera
 const { clip } = useHighlights(video, phase)
+function replayClip(event: Event) {
+  const element = event.target as HTMLVideoElement
+  if (element.ended) element.currentTime = 0
+  void element.play().catch(() => {})
+}
 const muted = useState('music-muted', () => false)
 const stage = ref<HTMLElement | null>(null)
 const { fullscreen, fullscreenError, toggleFullscreen } = useGameFullscreen(stage, () => { if (phase.value === 'running') pause() })
@@ -211,8 +216,8 @@ useHead({ title: 'Play · Subway Frauder' })
 
                     <section v-if="clip" class="runner-card" aria-labelledby="highlights-title">
                       <div class="p-3 sm:p-4">
-                        <h3 id="highlights-title" class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"><span class="size-2.5 rounded-full bg-rose-400 motion-safe:animate-pulse" aria-hidden="true" />Highlights</h3>
-                        <video :src="clip" autoplay loop muted playsinline aria-label="Tes meilleurs moments de la course" class="mt-3 aspect-4/3 w-full -scale-x-100 rounded-xl border border-white/10 bg-[#0b2235] object-cover" />
+                        <h3 id="highlights-title" class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"><span class="size-2.5 rounded-full bg-rose-400 motion-safe:animate-pulse" aria-hidden="true" />Highlights<span class="ml-auto rounded-md bg-[#ffcf45] px-2 py-0.5 text-xs text-sky-950">×3</span></h3>
+                        <video :src="clip" autoplay loop muted playsinline @loadedmetadata="($event.target as HTMLVideoElement).playbackRate = 3" @pause="replayClip" @ended="replayClip" aria-label="Tes meilleurs moments de la course" class="mt-3 aspect-4/3 w-full -scale-x-100 rounded-xl border border-white/10 bg-[#0b2235] object-cover" />
                         <p class="mt-2 text-xs text-sky-100/70">Tes dernières secondes de course · vidéo locale, jamais envoyée.</p>
                       </div>
                     </section>
