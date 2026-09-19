@@ -1,0 +1,14 @@
+node_modules/
+.nuxt/
+.output/
+.data/
+.cache/
+.vercel/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+AGENTS.md
