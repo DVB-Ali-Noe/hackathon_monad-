@@ -1,322 +1,264 @@
-# Spécification backend et contrat Monad
+# Backend et contrat Monad — résultats et top 25
 
-Périmètre : le contrat, les sessions, les routes serveur Nuxt et le relayer.
-Les décisions produit sont dans [PROJECT.md](../PROJECT.md). Les formats techniques
-et le stockage des replays restent à préciser avant l'implémentation.
+Le contrat de résultats et son top 25 historique sont implémentés dans
+[contracts/src/MonadSurf.sol](../contracts/src/MonadSurf.sol) et testé localement.
+Il remplace l'ancienne ébauche de ce document, qui identifiait les joueurs par leur
+pseudo et ne protégeait pas contre les doubles crédits. Aucun déploiement,
+transaction réseau, serveur de session ou validateur de rejeu n'est livré ici.
 
-## 1. Décisions structurantes
+Les décisions produit restent dans [PROJECT.md](../PROJECT.md). Le contrat d'API
+pour le prochain lot est proposé dans [backend-api.md](backend-api.md), en accord
+avec [interface.md](interface.md).
 
-**Pas de wallet joueur.** Le joueur saisit un pseudo. Une clé relayer unique, côté
-serveur, signe toutes les transactions. Cela supprime la connexion wallet, la
-distribution de faucet aux participants, les contraintes de reserve balance et la
-gestion de trente comptes pendant la démo.
+## 1. Contrat livré
 
-**Testnet Monad**, chain ID `10143`. Tester le RPC choisi dans les conditions de
-la démo et vérifier ses limites auprès du fournisseur.
+Un seul contrat, `MonadSurf`, sans proxy, NFT, token, boutique ni fantômes.
+Le constructeur reçoit une adresse `relayer_` non nulle, stockée de façon immuable.
+Seule cette adresse peut enregistrer un résultat. Le déployeur n'a aucun privilège
+supplémentaire. Une rotation de clé nécessiterait un nouveau contrat et une décision
+explicite sur la reprise des données ; aucune migration n'est fournie dans ce lot.
 
-**Un seul contrat.** Pas de proxy, pas de NFT, pas de token. Les pièces et les skins
-sont des entiers dans le contrat.
-
-## 2. Contrat
-
-### Modèle de données
+Le serveur crée et conserve un `playerId` interne non nul de 32 octets, associé à
+une session authentifiée. Un pseudo est seulement un nom d'affichage hors chaîne.
+Le contrat ne reçoit ni pseudo, ni cookie, ni inputs, ni vidéo.
 
 ```solidity
 struct Player {
-    uint32 bestScore;
-    uint32 coins;      // solde dépensable
-    uint32 runs;
-    uint32 skins;      // bitmask des skins possédés
-    uint8  equipped;
+    uint64 bestScore;
+    uint128 coins;
+    uint64 runs;
 }
 ```
 
-Les cinq champs tiennent dans un seul slot de storage.
+Les trois champs occupent un slot. Le solde de pièces cumulé est plus large que
+les gains d'une partie. Les additions gardent les contrôles de dépassement Solidity :
+un dépassement annule toute l'écriture, y compris la consommation du `runId`.
+Aucun score maximal métier n'est défini dans le contrat ; les limites dépendent
+du moteur partagé et seront appliquées avant la signature serveur.
 
-Un tableau contigu de joueurs et un index d'identité sont proposés. Le coût de
-lecture doit être mesuré avec les noms, l'alignement des pages et les accès répétés.
-Le coût du premier accès à une page n'est pas celui de tout le classement.
-Voir la [tarification officielle](https://docs.monad.xyz/developer-essentials/opcode-pricing).
+## 2. Interface publique
 
-Deux fantômes sont prévus : celui du joueur précédent et celui du meilleur score.
-Ils doivent conserver la graine, la version du moteur, le nombre de ticks, les
-commandes et le score de la partie. Le stockage sur le contrat est une proposition ;
-il reste à valider selon la taille réelle des replays. Le pseudo seul ne constitue
-pas une identité authentifiée.
+| Interface | Effet |
+| --- | --- |
+| `constructor(address relayer_)` | Fixe l'unique adresse autorisée, rejette l'adresse nulle |
+| `submitRun(bytes32 runId, bytes32 playerId, uint64 score, uint64 coins)` | Enregistre un résultat validé par le relayer |
+| `getPlayer(bytes32 playerId)` | Renvoie `(uint64 bestScore, uint128 coins, uint64 runs)` dans une structure `Player` |
+| `getLeaderboard()` | Renvoie les 0 à 25 entrées classées `(bytes32 playerId, uint64 score)` en un appel |
+| `processedRuns(bytes32 runId)` | Indique si la partie a déjà été enregistrée |
+| `relayer()` | Renvoie l'adresse autorisée |
 
-### Ébauche de contrat importée
+`getPlayer` renvoie une structure nulle pour un joueur inconnu ; `runs > 0`
+indique qu'au moins une partie a été enregistrée. Un score nul avec zéro pièce
+reste une partie et consomme son identifiant.
 
-Le code ci-dessous est une base de discussion, pas le contrat final. Avant toute
-implémentation ou utilisation, il faut l'aligner sur [l'interface](interface.md) :
-identifiant de partie non réutilisable, identité issue de la session, métadonnées
-complètes des replays, protection des achats déjà possédés et bornes d'entrée.
-Actuellement, `submitRun` permet de créditer plusieurs fois la même partie et ne
-stocke que les commandes du fantôme. Le seuil `GHOST_MIN_SCORE` désigne le dernier
-joueur éligible, pas forcément le joueur précédent ; cette règle reste à décider.
+`submitRun` vérifie le relayer, les deux identifiants non nuls et l'absence de
+crédit antérieur. Il marque ensuite la partie utilisée, conserve le maximum des
+scores, actualise le top 25 si le record personnel augmente, additionne les pièces
+et incrémente le compteur de parties. L'événement existant reste inchangé.
+Toutes ces écritures sont atomiques, sans appel externe.
 
 ```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+event RunSubmitted(
+    bytes32 indexed runId,
+    bytes32 indexed playerId,
+    uint64 score,
+    uint64 coins
+);
+```
 
-/// @notice Scores, pièces et skins. Toutes les écritures passent par le relayer.
-contract MonadSurf {
-    struct Player {
-        uint32 bestScore;
-        uint32 coins;
-        uint32 runs;
-        uint32 skins;
-        uint8 equipped;
-    }
+Les valeurs de l'événement sont celles de la partie, pas les agrégats du joueur.
+Il permet de rapprocher un reçu du résultat serveur et de reconstruire l'historique
+si le fournisseur conserve les logs nécessaires. Aucun indexeur n'est ajouté.
 
-    uint32 public constant GHOST_MIN_SCORE = 500;
-    uint8 public constant MAX_SKIN = 32;
+| Erreur personnalisée | Condition |
+| --- | --- |
+| `InvalidRelayer()` | Adresse nulle au déploiement |
+| `NotRelayer()` | Appel d'écriture non autorisé |
+| `InvalidRunId()` | Identifiant de partie nul |
+| `InvalidPlayerId()` | Identifiant de joueur nul |
+| `RunAlreadySubmitted(bytes32 runId)` | Partie déjà enregistrée, quel que soit le joueur annoncé |
 
-    address public immutable relayer;
+Le `runId` est unique **globalement dans ce contrat**, pas seulement par joueur.
+Si deux transactions soumettent le même identifiant, au plus une crédite la partie ;
+l'autre échoue sans modifier les statistiques. Le serveur doit éviter le second
+paiement de transaction grâce à son idempotence persistante. Un nouveau déploiement
+possède son propre registre : aucune protection inter-contrats n'est implicite.
 
-    Player[] private _players;
-    string[] private _pseudos;
-    mapping(bytes32 => uint32) private _idOf; // keccak(pseudo) => index + 1
+Le contrat fait confiance au relayer pour les résultats et le rattachement des
+parties aux joueurs. Il n'effectue ni rejeu ni preuve de mouvement. Le serveur doit
+recalculer score et pièces avec la simulation partagée **avant** de signer.
 
-    bytes public lastGhost;
-    uint32 public lastGhostId;
-    bytes public bestGhost;
-    uint32 public bestGhostId;
-    uint32 public bestScore;
+### Top 25 historique
 
-    event RunSubmitted(uint32 indexed id, string pseudo, uint32 score, uint32 coins);
-    event SkinBought(uint32 indexed id, uint8 skin);
-    event SkinEquipped(uint32 indexed id, uint8 skin);
+Hypothèse produit retenue : **un seul meilleur score par `playerId`**, donc au
+maximum 25 joueurs distincts, et non les 25 meilleures parties d'un même joueur.
+Le classement persiste entre parties, sans remise à zéro de session ou de saison.
+« All-time » porte sur les résultats acceptés par cette instance du contrat.
 
-    error NotRelayer();
-    error UnknownPlayer();
-    error InvalidSkin();
-    error SkinNotOwned();
-    error NotEnoughCoins();
-
-    modifier onlyRelayer() {
-        if (msg.sender != relayer) revert NotRelayer();
-        _;
-    }
-
-    constructor(address relayer_) {
-        relayer = relayer_;
-    }
-
-    function submitRun(
-        string calldata pseudo,
-        uint32 score,
-        uint32 coins,
-        bytes calldata inputs
-    ) external onlyRelayer {
-        uint32 id = _idOrCreate(pseudo);
-        Player storage p = _players[id];
-
-        if (score > p.bestScore) p.bestScore = score;
-        p.coins += coins;
-        p.runs += 1;
-
-        if (score >= GHOST_MIN_SCORE) {
-            lastGhost = inputs;
-            lastGhostId = id;
-            if (score > bestScore) {
-                bestScore = score;
-                bestGhost = inputs;
-                bestGhostId = id;
-            }
-        }
-
-        emit RunSubmitted(id, pseudo, score, coins);
-    }
-
-    function buySkin(string calldata pseudo, uint8 skin) external onlyRelayer {
-        if (skin >= MAX_SKIN) revert InvalidSkin();
-        uint32 id = _existingId(pseudo);
-        Player storage p = _players[id];
-        uint32 price = skinPrice(skin);
-        if (p.coins < price) revert NotEnoughCoins();
-        p.coins -= price;
-        p.skins |= uint32(1) << skin;
-        emit SkinBought(id, skin);
-    }
-
-    function equipSkin(string calldata pseudo, uint8 skin) external onlyRelayer {
-        if (skin >= MAX_SKIN) revert InvalidSkin();
-        uint32 id = _existingId(pseudo);
-        Player storage p = _players[id];
-        if (p.skins & (uint32(1) << skin) == 0) revert SkinNotOwned();
-        p.equipped = skin;
-        emit SkinEquipped(id, skin);
-    }
-
-    function skinPrice(uint8 skin) public pure returns (uint32) {
-        return skin == 0 ? 0 : uint32(skin) * 250;
-    }
-
-    function playerCount() external view returns (uint256) {
-        return _players.length;
-    }
-
-    function getPlayers(uint32 from, uint32 to)
-        external
-        view
-        returns (Player[] memory list, string[] memory names)
-    {
-        uint32 end = to > _players.length ? uint32(_players.length) : to;
-        uint32 n = end > from ? end - from : 0;
-        list = new Player[](n);
-        names = new string[](n);
-        for (uint32 i = 0; i < n; i++) {
-            list[i] = _players[from + i];
-            names[i] = _pseudos[from + i];
-        }
-    }
-
-    function getPlayer(string calldata pseudo) external view returns (Player memory) {
-        return _players[_existingId(pseudo)];
-    }
-
-    function _idOrCreate(string calldata pseudo) private returns (uint32) {
-        bytes32 key = keccak256(bytes(pseudo));
-        uint32 slot = _idOf[key];
-        if (slot != 0) return slot - 1;
-        _players.push(Player({bestScore: 0, coins: 0, runs: 0, skins: 1, equipped: 0}));
-        _pseudos.push(pseudo);
-        uint32 id = uint32(_players.length - 1);
-        _idOf[key] = id + 1;
-        return id;
-    }
-
-    function _existingId(string calldata pseudo) private view returns (uint32) {
-        uint32 slot = _idOf[keccak256(bytes(pseudo))];
-        if (slot == 0) revert UnknownPlayer();
-        return slot - 1;
-    }
+```solidity
+struct LeaderboardEntry {
+    bytes32 playerId;
+    uint64 score;
 }
+
+function getLeaderboard() external view returns (LeaderboardEntry[] memory);
 ```
 
-Le skin `0` est possédé par défaut et gratuit. Le tri du classement se fait côté
-front, pas dans le contrat.
+L'ABI renvoie un `tuple[]` dynamique avec les champs `playerId: bytes32` et
+`score: uint64`. Le tableau contient uniquement les entrées présentes : aucune
+case vide à filtrer et aucune pagination.
 
-### Contention et exécution parallèle
+Règles déterministes :
 
-Le slot propre à chaque joueur réduit les écritures communes, sans garantir une
-absence de conflits. La création d'un joueur, les fantômes globaux et la gestion
-transactionnelle du relayer restent partagés.
+- scores strictement positifs, triés du plus élevé au plus faible ;
+- à score égal, le plus petit `playerId` en valeur entière non signée sur 256 bits
+  passe devant, indépendamment de l'ordre d'arrivée ;
+- un score nul crédite normalement la partie et ses pièces, mais n'entre pas au top ;
+- une amélioration reclasse le joueur sans doublon ; à capacité pleine, une nouvelle
+  entrée mieux classée évince la dernière, sans supprimer ses statistiques ;
+- un joueur évincé peut revenir en améliorant son record suffisamment pour se classer.
 
-Une mesure sur des joueurs déjà créés et sans mise à jour de fantôme ne représente
-pas le coût du parcours complet. Toute démonstration de charge doit préciser les
-conditions mesurées et rester optionnelle après la démo jouable.
+Un résultat inférieur ou égal au record personnel ne touche pas au classement.
+Un nouveau record insuffisant pour entrer ne provoque aucune écriture dans le top.
+La recherche et les décalages parcourent seulement les 25 entrées au maximum,
+sans énumérer les joueurs ni leurs anciennes parties. Le compteur de parties,
+les pièces et l'anti-double crédit continuent à être actualisés indépendamment.
+Une soumission rejetée ne modifie ni le classement ni les statistiques.
 
-### Déploiement
+### Lecture au début de la partie et cible locale
 
-Foundry, avec le support Monad de la version 1.8 ou supérieure.
+Le front devra charger une fois `getLeaderboard()` au lancement et conserver cet
+instantané jusqu'à la fin de la partie. Le futur backend devra résoudre les
+`playerId` vers leurs pseudos par une lecture groupée de sa table de joueurs.
+Le pseudo n'est jamais extrait de l'identifiant ou utilisé comme autorisation.
+Le [format d'enrichissement proposé](backend-api.md#8-top-25-et-résolution-des-pseudos)
+prévoit un pseudo nul si le nom n'est pas disponible ; afficher alors un identifiant
+abrégé. Aucun endpoint ni rendu frontend n'est implémenté dans ce lot.
 
-```
-forge create src/MonadSurf.sol:MonadSurf \
-  --rpc-url $MONAD_RPC_URL \
-  --private-key $DEPLOYER_PRIVATE_KEY \
-  --constructor-args $RELAYER_ADDRESS
-```
+À partir du score courant et en excluant son propre `playerId` :
 
-Le déployeur et le relayer peuvent être la même clé pour le hackathon.
+1. Chercher le plus petit score **strictement supérieur** au score courant.
+2. Si plusieurs joueurs ont ce score, conserver celui au plus petit `playerId`.
+3. Afficher l'écart `scoreCible - scoreCourant` et le nom de la cible.
+4. À chaque progression locale, refaire cette sélection sur le même instantané.
+   Atteindre ou dépasser une cible passe à la suivante, même si plusieurs seuils
+   ont été franchis d'un coup. Les égalités déjà atteintes ne sont plus des cibles.
 
-## 3. Routes serveur
+Exemple : avec des adversaires à `400`, `700` et `1000`, un score courant de `350`
+affiche un écart de `50`. À `400`, la cible devient `700` et l'écart `300` ; à
+`720`, la cible devient `1000` et l'écart `280`. C'est l'écart qui décroît pendant
+l'approche d'une cible, **jamais le score historique stocké**.
 
-Les écritures passent par le serveur, les lectures non : le front interroge le RPC
-directement avec un `publicClient` viem. Moins de code et moins de latence.
+Sans cible supérieure, afficher « Aucun score supérieur dans cet instantané ».
+Un top vide peut afficher « Aucun score enregistré » ; une erreur de chargement
+doit afficher « Classement indisponible », sans inventer de cible. Il s'agit
+uniquement des autres joueurs du top 25 chargé, pas de tous les joueurs historiques
+ni d'un classement mis à jour en direct. Aucune transaction ni requête par frame.
 
-| Route | Méthode | Rôle |
-| --- | --- | --- |
-| Route de création de session, à définir | POST | Attribue une partie et ses paramètres de parcours |
-| `server/api/run.post.ts` | POST | Rejoue, vérifie et soumet une partie une seule fois |
-| `server/api/skin/buy.post.ts` | POST | Achat d'un skin |
-| `server/api/skin/equip.post.ts` | POST | Équipement d'un skin |
+Conserver les `uint64` décodés en `bigint`. Pour JSON, sérialiser chaque score en
+chaîne décimale et le relire avec `BigInt(score)` ; ne pas passer par `Number`.
+La borne `18446744073709551615` dépasse la précision exacte d'un `number` JavaScript.
+Si le moteur fournit un `number`, vérifier qu'il est entier sûr et non négatif
+avant `BigInt(scoreCourant)` ; comparer et soustraire en `bigint` puis formater
+le résultat en texte. Les types partagés du moteur restent inchangés.
 
-### Sessions et soumission d'une partie
+## 3. Vérification locale
 
-Entrée : un `RunResult` tel que proposé dans [interface.md](interface.md).
+Voir [contracts/README.md](../contracts/README.md) pour les commandes reproductibles.
+Configuration isolée dans `contracts/`, sans dépendance Solidity ou frontend.
+Le compilateur est fixé à solc 0.8.24 et la cible de compilation à Cancun.
+Les sorties et le compilateur local sont exclus par `contracts/.gitignore`.
 
-Le serveur doit créer ou reconnaître une session joueur et une partie identifiée
-par `runId`, avec une graine et une version de moteur autorisées. Le mécanisme de
-session et sa persistance restent à définir ; saisir un pseudo ne doit pas suffire
-pour dépenser les pièces d'un autre joueur.
+30 tests réussis avec Foundry 1.5.1, dont trois tests génératifs de 256 cas chacun :
+accès relayer, doublons identiques ou modifiés, réattribution interdite, isolation,
+meilleur score, cumul des pièces/parties, événement, identifiants nuls et bornes
+arithmétiques par partie. Les 16 tests initiaux sont conservés. Les 14 tests ajoutés
+couvrent le top vide, partiel, plein, les évictions et réentrées, les égalités,
+les scores nuls, la précision `uint64` et l'absence de changement après rejet.
+L'enregistrement des accès au stockage vérifie l'absence d'écritures inutiles dans
+le classement. Le nouveau fuzz compare le top à un calcul indépendant des records
+de 32 joueurs après chacune des 64 soumissions de chaque cas : tri, capacité,
+unicité et scores sont ainsi contrôlés sur des séquences d'améliorations.
+Ces tests s'exécutent hors réseau, sans clé.
 
-Traitement attendu :
+La suite est une vérification de logique EVM, pas une mesure des règles ou du gas
+Monad. Le chain ID local `10143` ne transforme pas Foundry 1.5.1 en moteur Monad.
+Avant un déploiement, reprendre ces tests avec Foundry 1.8 ou supérieur et
+`--network monad`, selon la
+[documentation officielle](https://docs.monad.xyz/guides/deploy-smart-contract/foundry).
+Aucun chiffre de gas ou délai de finalité n'est validé par ce lot.
 
-1. Vérifier la session, l'identifiant de partie et les paramètres attendus.
-2. Borner les commandes, le nombre de ticks et les tailles d'entrée.
-3. Reconstruire le parcours depuis la graine et rejouer les commandes avec le moteur
-   partagé. Recalculer le score et les pièces ; refuser tout écart ou fin invalide.
-4. Empêcher deux requêtes concurrentes ou deux tentatives de créditer la même partie.
-   Le contrat doit également refuser un identifiant déjà crédité.
-5. Faire signer et envoyer la transaction par le relayer, puis retourner son hash.
-   Conserver le lien entre partie et transaction pour permettre une reprise après
-   une réponse perdue, sans second crédit.
+## 4. API et persistance à intégrer
 
-Le rejeu est requis pour accepter une partie. Une simple vérification de bornes
-ne remplace pas le calcul du résultat. Les achats et équipements doivent vérifier
-la session propriétaire du joueur de la même manière.
+La [proposition détaillée](backend-api.md) décrit les routes suivantes ; elles
+n'existent pas encore dans `server/` :
 
-### Limite de gas
+| Méthode et route | Responsabilité future |
+| --- | --- |
+| `POST /api/session` | Créer/reconnaître un joueur par cookie opaque, associer le pseudo |
+| `POST /api/runs` | Allouer `runId`, graine et version autorisées, persister le propriétaire |
+| `POST /api/run` | Valider un `RunResult` par rejeu et programmer son enregistrement unique |
+| `GET /api/runs/:runId` | Retrouver l'état et le hash après une réponse perdue |
 
-Le coût de `submitRun` varie : création du joueur, taille du pseudo, taille du replay
-et mise à jour des fantômes ne suivent pas tous le même chemin. La limite de
-200 000 gas de la proposition initiale n'est donc pas validée.
+La session sera liée à un identifiant interne ; saisir le pseudo d'un autre joueur
+ne donne aucun accès à ses parties. Cookie de production `HttpOnly`, `Secure`,
+`SameSite=Lax`, contrôle d'origine et stockage durable sont proposés.
+Durées, récupération et changement de joueur sur une borne restent ouverts.
 
-Mesurer les cas réellement supportés et leurs bornes avant de choisir des limites.
-Une limite fixe n'est pertinente que pour des coûts suffisamment connus ; suivre
-les [bonnes pratiques Monad](https://docs.monad.xyz/developer-essentials/best-practices).
+Les requêtes Vercel doivent partager un stockage avec unicité de partie, empreinte
+immuable de soumission et tâche relayer durable. Les transitions et reprises après
+crash demandent des opérations atomiques ; un cache ou verrou mémoire ne suffit pas.
+La gestion des nonces doit sérialiser les envois par clé ou les réserver de manière
+transactionnelle, avec réconciliation des transactions signées et diffusées.
+Le fournisseur de stockage et le mécanisme de file/worker restent à choisir.
 
-### Envoi et confirmation
+Les lectures on-chain de `getPlayer` et `getLeaderboard` sont publiques. Le top 25
+fournit directement sa liste de joueurs ; le futur backend doit seulement enrichir
+ces identifiants avec les noms hors chaîne. Il n'y a pas d'énumération globale de
+tous les joueurs. L'affichage et la résolution des pseudos restent à intégrer.
 
-Le serveur renvoie le hash et l'interface suit l'état de la transaction. L'éventuel
-usage de `eth_sendRawTransactionSync` doit être vérifié auprès du RPC retenu ;
-recevoir un reçu ne doit pas être présenté automatiquement comme la finalisation.
-Afficher des délais mesurés, sans garantie de confirmation sous la seconde.
+## 5. Paramètres du futur déploiement
 
-## 4. Gestion des nonces
+Cible : **Monad testnet, chain ID `10143`**. Vérifier que le RPC retenu renvoie cet
+identifiant avant toute signature. Références :
+[réseau testnet](https://docs.monad.xyz/developer-essentials/testnet) et
+[guide Foundry](https://docs.monad.xyz/guides/deploy-smart-contract/foundry).
 
-Sur Vercel, un compteur en mémoire n'est pas partagé entre invocations. Deux requêtes
-peuvent lire le même nonce en attente ; relire le nonce et réessayer une fois ne
-constitue pas une garantie de coordination.
+| Paramètre | Valeur ou choix nécessaire |
+| --- | --- |
+| Contrat | `contracts/src/MonadSurf.sol:MonadSurf` |
+| Compilateur / optimisation | solc `0.8.24`, optimiseur actif, `optimizer_runs = 200` |
+| Cible de compilation | EVM `cancun`, fixée dans `contracts/foundry.toml` |
+| Exécution de validation réseau | Foundry ≥ 1.8, `--network monad` ; revalider la configuration avec cette version |
+| Constructeur | `relayer_` : adresse non nulle du signataire serveur |
+| RPC | `MONAD_RPC_URL`, endpoint testnet choisi, quotas à vérifier |
+| Signataire du déploiement | Compte local chiffré/keystore à préparer dans un lot autorisant le déploiement |
+| Signataire des résultats | `RELAYER_PRIVATE_KEY`, uniquement serveur |
+| Adresse déployée | `CONTRACT_ADDRESS`, à renseigner après déploiement |
 
-La stratégie d'envoi doit être définie avant l'intégration : sérialisation des
-écritures du relayer ou coordination persistante. Elle doit couvrir les parties,
-les achats et les équipements, ainsi que les tentatives après échec réseau.
+Aucun secret n'est nécessaire pour les tests. Les secrets futurs et le RPC privé
+restent hors bundle client et hors `runtimeConfig.public`. Ne pas copier de clé
+privée dans une commande, un document ou un fichier partagé.
 
-Un éventuel script local de charge peut gérer ses propres nonces, mais ne doit pas
-utiliser en parallèle la même clé qu'un serveur actif sans coordination.
+Avant publication : revalider la compilation et les tests sous l'environnement
+Monad, vérifier le réseau et l'adresse relayer, estimer les opérations réellement
+supportées, puis conserver l'ABI, les paramètres, l'adresse et le reçu de déploiement.
+Les bornes de gas et la politique de confirmation doivent venir d'essais du réseau
+cible ; un hash ou un reçu ne suffit pas à annoncer une finalité mesurée.
+La diffusion d'une transaction reste hors de ce premier lot.
 
-## 5. Variables d'environnement
+## 6. Prochain lot et choix ouverts
 
-| Variable | Visibilité | Contenu |
-| --- | --- | --- |
-| `MONAD_RPC_URL` | privée | endpoint RPC dédié |
-| `RELAYER_PRIVATE_KEY` | privée | clé de signature du relayer |
-| `CONTRACT_ADDRESS` | publique | adresse du contrat déployé |
+1. Figer avec le front l'API de `shared/game/`, la graine, la version et les bornes
+   des ticks, commandes, scores et pièces. Aucun moteur alternatif n'est créé ici.
+2. Choisir stockage durable, sessions, rétention des replays et file/coordination
+   des nonces adaptée à Vercel.
+3. Implémenter le rejeu réel, les routes et les reprises idempotentes, avec tests
+   de concurrence et de crash. Refuser toute acceptation si le moteur est indisponible.
+4. Préparer ensuite un déploiement autorisé et l'intégration du suivi des résultats.
 
-Les deux premières restent dans la partie privée de `runtimeConfig` et dans les
-variables de production Vercel. Aucune ne doit apparaître dans
-`runtimeConfig.public` ni dans le bundle client.
-
-## 6. Ordre de réalisation
-
-1. Préciser les sessions, l'identité, les paramètres de partie et l'anti-double crédit.
-2. Aligner et tester le contrat, puis le déployer sur testnet.
-3. Intégrer la simulation partagée, le rejeu et la soumission par relayer.
-4. Lire le classement et suivre la confirmation dans le front.
-5. Conserver et rejouer les fantômes avec leurs métadonnées.
-6. Ajouter la boutique si le temps le permet.
-
-Une démonstration de charge reste facultative. Les durées et coûts seront estimés
-à partir de l'implémentation ; aucun budget de trois heures n'est garanti.
-
-## 7. Hors périmètre assumé
-
-Pas de wallet, pas de NFT, pas de token, pas de proxy, pas d'indexer, pas de
-signature EIP-712, pas de preuve d'authenticité des mouvements.
-
-Un score enregistré ne prouve pas que le joueur a exécuté les mouvements. La
-validation par rejeu vérifie la cohérence d'une partie, pas l'origine des inputs.
-Cette limite est annoncée telle quelle plutôt que masquée derrière un mécanisme qui
-ne la résout pas.
+Boutique, skins et stockage des fantômes restent hors lot. Avec ce contrat sans
+proxy, ajouter des écritures de boutique demanderait un nouveau déploiement et une
+stratégie explicite de conservation des soldes. Le format et l'emplacement des
+fantômes restent ouverts ; leurs graines, versions, ticks et inputs devront être
+conservés, sans vidéo.
