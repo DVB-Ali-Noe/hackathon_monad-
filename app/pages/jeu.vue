@@ -12,7 +12,7 @@ const {
 } = useRunner(backend.prepare)
 const rival = computed(() => nearestRival(leaderboard.value?.entries || [], state.value.score, playerId.value))
 const savedLabel = computed(() => saving.value ? 'Validation de la partie…'
-  : ({ ready: 'Partie créée', queued: 'Résultat validé · envoi en attente', submitted: 'Transaction envoyée · confirmation en cours', confirmed: 'Résultat confirmé sur Monad', failed: 'Enregistrement non confirmé' }[submission.value?.status || 'ready']))
+  : ({ ready: 'Partie créée', submitted: 'Transaction envoyée · confirmation en cours', confirmed: 'Résultat confirmé sur Monad' }[submission.value?.status || 'ready']))
 onMounted(() => { void backend.refreshLeaderboard() })
 watch(result, (value) => { if (value) void backend.submit(value) })
 async function changePlayer() {

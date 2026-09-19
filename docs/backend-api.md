@@ -1,170 +1,141 @@
-# API backend et intégration Monad
+# API sans base de données
 
-L’API est implémentée dans `server/api/`. Le navigateur joue avec le moteur partagé
-`runner-5-oncoming-60hz`, à 60 ticks/s. Le serveur rejoue exactement ce moteur avant
-que le relayer puisse transmettre un résultat à `MonadSurf` sur Monad testnet 10143.
-Aucune vidéo n’est envoyée. Le rejeu prouve la cohérence des commandes, pas leur
-origine corporelle. Le fantôme reste retiré du jeu, conformément à la demande de Noé.
+Toute la persistance métier est dans `MonadSurf` sur Monad testnet (10143) :
+pseudos, expiration et révocation des sessions, paramètres des parties, résultats,
+pièces, records, top 25 et replays. Aucun PostgreSQL, indexeur ou worker séparé
+n’est nécessaire. Le navigateur simule le jeu ; les routes Nuxt rejouent les
+commandes avant de signer les écritures. Aucune vidéo n’est transmise.
 
 ## Configuration
 
-Copier [`.env.example`](../.env.example) vers `.env`, puis renseigner :
+Renseigner les quatre variables privées de [`.env.example`](../.env.example) :
 
-| Variable serveur | Usage |
+| Variable | Valeur |
 | --- | --- |
-| `NUXT_DATABASE_URL` | PostgreSQL durable, partagé entre les instances ; utiliser TLS et le pool fourni par l’hébergeur |
-| `NUXT_SITE_ORIGIN` | Origine exacte du site, sans chemin ; HTTPS en ligne |
-| `NUXT_MONAD_RPC_URL` | RPC Monad testnet, vérifié par son chain ID |
-| `NUXT_MONAD_CONTRACT_ADDRESS` | Adresse du contrat déployé contenant `getLeaderboard` |
-| `NUXT_RELAYER_PRIVATE_KEY` | Clé du relayer désigné dans le constructeur, approvisionné en MON de test |
-| `NUXT_RELAY_SECRET` | Secret aléatoire d’au moins 32 caractères pour le worker |
+| `NUXT_SITE_ORIGIN` | Origine exacte, `http://localhost:3000` en local, `https://hackathon-monad-brown.vercel.app` en production |
+| `NUXT_MONAD_RPC_URL` | RPC Monad testnet, par exemple `https://testnet-rpc.monad.xyz` |
+| `NUXT_MONAD_CONTRACT_ADDRESS` | Adresse du [manifeste de déploiement](../contracts/deployments/monad-testnet.json) |
+| `NUXT_RELAYER_PRIVATE_KEY` | Clé du relayer immuable, uniquement côté serveur |
 
-Ces variables appartiennent au `runtimeConfig` privé. Elles ne doivent pas entrer
-dans `runtimeConfig.public`, le dépôt, le bundle navigateur ou les logs.
-La clé relayer doit être dédiée à cette file et ne pas être utilisée par un autre
-script ou une autre base. Le contrat possède un relayer immuable : un changement
-de clé ou de contrat exige de traiter les tâches existantes avant toute migration.
-
-Pour une base locale, [compose.yaml](../compose.yaml) fournit PostgreSQL 17 avec
-un volume persistant et un port lié à `127.0.0.1:55432`. Choisir un mot de passe
-aléatoire dans `MONAD_POSTGRES_PASSWORD` (variable Docker uniquement), le reporter
-dans `NUXT_DATABASE_URL`, puis lancer `docker compose up -d --wait` avant la
-migration. Conserver le `.env` existant lorsqu’il contient déjà le wallet.
-`docker compose stop` arrête la base en conservant les données.
+Sur Vercel, les renseigner dans **Settings → Environment Variables → Production**,
+puis redéployer. Aucun secret n’entre dans `runtimeConfig.public` ni dans Git.
+Le relayer doit conserver des MON testnet et être réservé à cette application.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm db:migrate
 pnpm dev
 ```
 
-`db:migrate` installe les tables et index dans une transaction. Les identifiants,
-sessions, inputs et transactions signées sont persistés dans PostgreSQL, jamais
-dans le système de fichiers éphémère de Vercel. Le schéma se trouve dans
-[server/database/schema.sql](../server/database/schema.sql).
+La publication passe par le [workflow existant](../.github/workflows/deploy.yml)
+sur `main`. La durée maximale de la fonction Vercel est de 60 secondes.
 
-Pour que les confirmations continuent après fermeture du navigateur, exécuter
-`pnpm relay` dans un worker supervisé, avec `NUXT_SITE_ORIGIN` et
-`NUXT_RELAY_SECRET`. Il appelle `POST /api/relay` toutes les cinq secondes ; un
-planificateur externe peut appeler la même route avec `Authorization: Bearer …`.
-Le navigateur fait aussi progresser la file tant que l’écran de résultat est ouvert.
-Aucune promesse serveur détachée n’est utilisée. Sans navigateur ni worker actif,
-les tâches restent conservées et attendent le prochain appel.
+## Routes
 
-Le [contrat testnet est déployé](../contracts/README.md#contrat-déployé). La base
-hébergée, son application de schéma, les variables Vercel et l’exécution distante du
-worker restent à configurer séparément des services locaux. La pipeline de `main`
-est conservée.
-
-## Routes et échanges
-
-Toutes les réponses portent `Cache-Control: no-store`. Les écritures du navigateur
-exigent `application/json` et l’`Origin` exact. Les erreurs contrôlées exposent
-`data.message`, sans détail des secrets ni du stockage. Les types partagés sont
-[shared/api.ts](../shared/api.ts) et [shared/types.ts](../shared/types.ts).
-
-| Route | Corps et résultat |
+| Route | Fonction |
 | --- | --- |
-| `POST /api/session` | `{ pseudo }` → `{ playerId, pseudo }` |
-| `DELETE /api/session` | `{}` → révocation de la session et suppression du cookie |
-| `POST /api/runs` | `{ requestKey }` → `{ runId, playerId, pseudo, seed, simulationVersion, expiresAt }` |
-| `POST /api/run` | `RunResult` complet → état de soumission |
-| `GET /api/runs/:runId` | État de la partie appartenant à la session |
-| `POST /api/runs/:runId/relay` | `{}` → progression de la file et état de la partie du joueur |
-| `GET /api/leaderboard` | `{ blockNumber, entries: [{ playerId, pseudo, score }] }` |
-| `POST /api/relay` | Route du worker, authentifiée par secret, sans cookie joueur |
+| `POST /api/session` | `{ pseudo }` : crée ou actualise le profil et sa session onchain |
+| `DELETE /api/session` | `{}` : révoque la session onchain, puis efface le cookie |
+| `POST /api/runs` | `{ requestKey }` : inscrit une partie et renvoie sa graine |
+| `POST /api/run` | `RunResult` : rejoue les commandes, enregistre le résultat et le replay |
+| `GET /api/runs/:runId` | Lit l’état onchain d’une partie de la session |
+| `GET /api/leaderboard` | Lit le top 25 et les pseudos, au même bloc |
 
-Une réponse réussie utilise HTTP 200. L’état de soumission contient `runId`,
-`status`, `transactionHash` et `error`. Les états sont `ready`, `queued`,
-`submitted`, `confirmed` et `failed`. Le hash est connu dès la signature persistée ;
-sa présence seule ne prouve ni diffusion réussie ni confirmation.
+Les écritures du navigateur exigent `application/json` et l’`Origin` exact.
+Toutes les réponses portent `Cache-Control: no-store`. Les erreurs publiques
+ne révèlent ni clé, ni détails internes du RPC.
 
-## Sessions et création des parties
+## Identité et sessions
 
-Le serveur génère un `playerId` et un jeton de session aléatoires de 32 octets.
-Seule l’empreinte SHA-256 du jeton est stockée. Le cookie est `HttpOnly`,
-`SameSite=Strict`, `Path=/`, valable 30 jours. En HTTPS, il s’appelle
-`__Host-monad-session` et porte `Secure`. Le développement HTTP utilise
-`monad-session`. Aucun jeton ne revient dans le JSON ou `localStorage`.
+Un jeton aléatoire de 256 bits reste dans un cookie `HttpOnly`, `SameSite=Strict`,
+`Path=/`, valable 30 jours. En HTTPS il est `Secure` et porte le préfixe `__Host-`.
+Le `playerId` public est le SHA-256 du jeton ; le jeton lui-même n’est jamais
+inscrit sur la blockchain. Connaître le pseudo ou le `playerId` ne permet pas de
+se connecter à la session.
 
-Le pseudo est normalisé NFC, limité à 20 unités UTF-16 et débarrassé des espaces
-périphériques ; caractères de contrôle et de format interdits. Changer son pseudo
-conserve l’identité, mais « Changer de joueur » révoque la session. Deux sessions
-avec le même nom restent distinctes. Un cookie perdu ne se récupère pas avec le pseudo.
+Le contrat stocke le pseudo et l’expiration. Chaque requête authentifiée relit
+cette expiration. La révocation reste effective après un redémarrage et sur les
+autres instances Vercel. Une session révoquée ne peut pas être réactivée ; une
+nouvelle identité est créée au prochain départ. Perdre le cookie perd l’accès
+à ce joueur, tout en conservant son score public.
 
-La création d’une partie persiste propriétaire, pseudo initial, graine aléatoire,
-version, contrat cible et échéance de 24 heures. `requestKey` est un UUID client ;
-la contrainte `(player_id, request_key)` renvoie la même partie sur répétition,
-tant que celle-ci attend son résultat et que le pseudo n’a pas changé.
-Le serveur choisit la graine et la version, sans dépendance aux blocs Monad.
+Un pseudo est normalisé NFC et limité à 20 unités UTF-16 visibles côté API,
+80 octets au maximum dans le contrat. Deux joueurs peuvent porter le même pseudo.
+Le changement de pseudo conserve les statistiques et actualise le nom du top 25.
+Une partie conserve une copie du pseudo utilisé à son départ.
 
-## Rejeu et idempotence
+## Préparation et validation
 
-Le serveur vérifie le propriétaire, la graine, le pseudo initial et la version.
-Score, pièces et ticks doivent être des entiers JavaScript sûrs non négatifs ; il
-faut une commande valide par tick. La simulation doit se terminer exactement au
-dernier tick, avec les mêmes points et pièces que le résultat annoncé.
+Le serveur dérive un `runId` du joueur et de `requestKey`, tire une graine aléatoire,
+puis inscrit ces paramètres dans le contrat. Une nouvelle tentative avec la même
+clé retrouve la même partie. `getRun` conserve son propriétaire, sa graine, le
+hash de la version du moteur, son pseudo initial et l’heure du bloc de création.
+Une partie non soumise expire après 24 heures.
 
-Limites d’enregistrement : corps de 4 Mio, 108 000 ticks, soit 30 minutes simulées.
-Le jeu local peut continuer au-delà ; son résultat ne pourra pas être crédité.
-La durée simulée ne peut pas dépasser le temps depuis la création, avec une
-marge de deux secondes. Les pauses sont donc autorisées. Une partie non soumise
-expire après 24 heures ; une soumission déjà acceptée peut être retentée après
-cette échéance avec la même session et les mêmes données.
+Le moteur partagé `runner-5-oncoming-60hz` avance à 60 ticks/s. Le serveur vérifie
+l’identité, les paramètres onchain, les commandes et la durée réelle écoulée,
+puis recalcule score et pièces. La partie doit se terminer exactement au dernier
+tick annoncé. Limites : 4 Mio par requête et 108 000 ticks (30 minutes). Une marge
+de deux secondes couvre la précision des horloges. Le contrat vérifie également
+la durée, la taille du replay, l’expiration et l’unicité du crédit.
 
-Après rejeu, le résultat normalisé, son empreinte et l’état `queued` sont enregistrés
-atomiquement. Des demandes concurrentes identiques retrouvent le même résultat ;
-un autre résultat valide pour le même identifiant est refusé avec 409. Les champs
-supplémentaires sans effet sont ignorés par la normalisation. Une tentative qui
-échoue au rejeu n’est pas créditée et ne réserve pas de transaction.
+Chaque commande est compactée dans un octet : `(lane + 1) * 3 + action`, avec
+`none=0`, `jump=1`, `crouch=2`. L’événement `RunSubmitted` contient tous ces octets.
+`getRun` conserve leur `keccak256`, le nombre de ticks, le score, les pièces et le
+bloc d’enregistrement. Les paramètres et le journal permettent de reconstruire
+le replay sans base externe ; la lecture d’historiques anciens dépend de la
+rétention des logs du fournisseur RPC.
 
-Limites par minute : 20 créations/mises à jour de session par IP, 12 créations de
-partie et 6 soumissions par joueur, 30 appels de relayer par joueur et 30 lectures
-de classement par IP. Elles sont partagées dans PostgreSQL. Sur Vercel, l’IP
-provient de son [en-tête `x-vercel-forwarded-for`](https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for) ; en local, de la connexion directe. Les erreurs utilisent
-400, 401, 403, 404, 409, 410, 413, 415, 422, 429 ou 503 selon le cas.
+Le rejeu prouve la cohérence des commandes, pas l’authenticité des mouvements.
+Le relayer reste une autorité de validation : aucun rejeu Solidity ni preuve ZK
+n’est implémenté.
 
-## File relayer et confirmation
+## Envois, concurrence et reprise
 
-Un verrou transactionnel PostgreSQL protège un émetteur logique. Une seule
-transaction reste en vol ; les suivantes attendent sa résolution. Le nonce est
-alloué lors de la préparation et conservé dans la transaction signée. Les octets
-signés et le hash sont enregistrés **avant** toute diffusion. Une reprise après
-crash ou erreur réseau diffuse ces mêmes octets, jamais un nouveau crédit.
+Le serveur attend les écritures dans la requête HTTP. Il relit le nonce confirmé
+et le nonce `pending`, attend une transaction déjà en vol, puis signe. Une erreur
+RPC rediffuse les mêmes octets signés. Un changement de nonce exige la consommation
+du précédent et une nouvelle lecture de l’opération dans le contrat.
 
-Le reçu doit réussir, concerner le contrat et le signataire attendus, et contenir
-`RunSubmitted` avec les bons run, joueur, score et pièces. Le bloc du reçu est
-revérifié et un bloc supplémentaire doit exister avant `confirmed`. Ce seuil de
-deux confirmations ne constitue pas une garantie de finalité irréversible.
-Une transaction rejetée passe à `failed`, une indisponibilité RPC garde la tâche.
-Le contrat apporte en plus l’unicité globale des `runId`.
+Des requêtes concurrentes peuvent viser le même nonce ; elles attendent son
+inclusion, relisent l’état et retentent si nécessaire. Le contrat tranche : un
+`runId` ne crédite qu’une fois. Un résultat déjà enregistré est renvoyé tel quel ;
+un autre résultat pour la même partie provoque un 409.
 
-Le remplacement automatique d’une transaction bloquée par des frais trop faibles
-n’est pas implémenté. La file reste alors en attente : intervenir sur la même
-transaction/nonce et conserver les preuves avant toute reprise. Ne pas contourner
-la file avec une autre utilisation de la clé.
+La boucle de reprise est bornée. Une coupure ou un délai dépassé peut laisser
+une transaction se confirmer après l’erreur HTTP. Le bouton de reprise relit
+alors le contrat et évite un second crédit. Il n’existe plus de file persistante
+hors chaîne : avant diffusion, fermer la page peut nécessiter de renvoyer le
+résultat depuis l’écran de fin. Après diffusion, Monad traite la transaction
+même si le navigateur et la fonction serveur sont arrêtés. Une transaction
+bloquée par des frais insuffisants nécessite une intervention sur son nonce.
+
+Les états publics sont `ready`, `submitted` et `confirmed`. La confirmation
+exige le journal attendu dans le bloc canonique et un bloc supplémentaire. Cela
+ne constitue pas une promesse de finalité irréversible.
+
+## Limites d’abus
+
+Le contrat autorise au maximum 60 mutations réussies par minute, toutes sessions
+et instances confondues. L’API vérifie aussi ce quota avant signature et borne
+les frais maximaux d’une transaction à 1 MON. Des limites locales par instance
+complètent ce contrôle : 20 appels session/minute/IP, 12 créations et 6 soumissions
+par joueur, 30 lectures de classement/IP et 30 lectures d’état/joueur.
+
+Les limites mémoire ne sont pas distribuées. Le quota onchain borne les écritures,
+mais un client peut monopoliser ce quota ; aucune protection anti-bot complète
+n’est revendiquée pour cette démo testnet.
 
 ## Top 25 et affichage en jeu
 
-La route lit `getLeaderboard()` à un bloc déterminé, puis résout les pseudos dans
-une lecture groupée PostgreSQL. Les scores viennent du contrat, sous forme de
-chaînes décimales conservant toute la précision `uint64`. Un nom inconnu donne
-`null` et le front affiche un identifiant abrégé.
+`getLeaderboard()` renvoie directement `playerId`, `pseudo` et `score`. Les scores
+`uint64` deviennent des chaînes décimales JSON, puis des `BigInt` côté navigateur.
+Le front recharge à l’ouverture, au début de chaque partie et après confirmation.
+Il exclut le joueur courant et affiche l’écart vers le score strictement supérieur
+le plus proche. Cet écart diminue localement ; aucune requête ne part par tick.
 
-À l’ouverture puis au début de chaque partie, le front charge un instantané. Il exclut son propre
-joueur, choisit le score strictement supérieur le plus proche et calcule l’écart
-avec `BigInt`. Quand une cible est atteinte, la suivante prend sa place. Aucun
-appel réseau n’est effectué par tick. Le classement complet figure sous le jeu.
-Une erreur affiche « Leaderboard unavailable ». Un chargement réussi sans cible,
-y compris un top vide, affiche « Best score » ; le tableau indique explicitement
-quand aucun record n’a encore été enregistré.
-
-À la fin, le résultat est envoyé et le front affiche validation, attente,
-transaction envoyée ou confirmation, avec lien explorateur et reprise sur erreur.
-Une confirmation recharge le classement depuis le contrat, sans attendre la
-partie suivante. Une réponse tardive d’une ancienne partie est ignorée.
-Si le service manque au lancement, la course reste locale et l’interface l’annonce ;
-aucun faux classement ni faux statut de confirmation n’est créé.
+Une erreur affiche « Leaderboard unavailable ». Un top vide réussi affiche
+explicitement l’absence de score ; il ne simule aucun adversaire. Sans backend
+configuré au départ, le jeu annonce une partie locale non enregistrée.
 
 ## Vérification
 
@@ -172,13 +143,11 @@ aucun faux classement ni faux statut de confirmation n’est créé.
 pnpm test
 pnpm typecheck
 pnpm build
-# Compiler d’abord le contrat avec Forge, puis :
+# Compiler également le contrat avec Forge avant :
 pnpm test:integration
 ```
 
-Le test d’intégration lance un PostgreSQL éphémère dans Docker, Anvil en chain ID
-10143 et le serveur Nuxt construit. Ses comptes sont aléatoires, alimentés uniquement
-sur cette EVM locale. Il couvre cookies, contrôle d’origine, propriété des parties,
-rejeu, falsification, concurrence, redémarrage du serveur, nonces, crédit unique,
-classement et révocation. Il nettoie ses processus et son conteneur à la fin.
-Ces tests ne remplacent pas un essai sur le contrat réellement déployé sur Monad.
+Les tests d’intégration lancent Anvil et deux serveurs Nuxt sans Docker ni base.
+Ils vérifient sessions, révocation entre instances, rejeu, concurrence, unicité,
+pseudos et replays onchain, puis reprise après redémarrage. Le test de déploiement
+utilise un wallet aléatoire alimenté uniquement dans cette EVM locale.

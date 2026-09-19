@@ -1,24 +1,26 @@
-import { apiHandler, databaseFor, fail, jsonBody, rateLimit, requirePlayer } from '../utils/http.ts'
-import { HEX_ID, validateRun } from '../utils/replay.ts'
-import { runStatus } from '../utils/runs.ts'
-import type { StoredRun } from '../utils/runs.ts'
+import { encodeFunctionData, keccak256, toHex } from 'viem'
+import { SIMULATION_VERSION } from '../../shared/game/engine.ts'
+import { apiHandler, fail, jsonBody, rateLimit, requirePlayer } from '../utils/http.ts'
+import { validateRun } from '../utils/replay.ts'
+import { ownedRun } from '../utils/runs.ts'
+import { chainWriter, monadSurfAbi } from '../utils/contract.ts'
 
 export default apiHandler(async (event) => {
-  const player = await requirePlayer(event)
-  await rateLimit(event, 'submit', 6, player.id)
   const body = await jsonBody(event, 4 * 1024 * 1024)
-  if (typeof body.runId !== 'string' || !HEX_ID.test(body.runId)) fail(400, 'Identifiant de partie invalide.')
-  const sql = databaseFor(event)
-  const [run] = await sql<StoredRun[]>`select * from runs where id = ${body.runId} and player_id = ${player.id}`
-  if (!run) fail(404, 'Partie introuvable.')
-  if (!run.payload_hash && run.expires_at.getTime() <= Date.now()) fail(410, 'Cette partie a expiré.')
+  const player = await requirePlayer(event)
+  rateLimit(event, 'submit', 6, player.id)
+  const config = useRuntimeConfig(event)
+  const run = await ownedRun(config, body.runId, player.id)
+  if (!run.submittedBlock && Number(run.createdAt) * 1000 + 86400000 < Date.now()) fail(410, 'Cette partie a expiré.')
   let validated
-  try { validated = validateRun(body, run) }
-  catch (error) { fail(422, error instanceof Error ? error.message : 'Résultat invalide.') }
-  const [accepted] = await sql<StoredRun[]>`
-    update runs set payload_hash = ${validated.hash}, result = ${sql.json(validated.result)},
-      status = case when status = 'ready' then 'queued' else status end
-    where id = ${run.id} and (payload_hash = ${validated.hash} or (payload_hash is null and expires_at > now())) returning *`
-  if (!accepted) fail(409, 'Un autre résultat est déjà enregistré pour cette partie, ou elle a expiré.')
-  return runStatus(accepted)
+  try {
+    validated = validateRun(body, { id: run.id, pseudo: run.pseudo, seed: run.seed.slice(2), simulation_version: SIMULATION_VERSION, created_at: new Date(Number(run.createdAt) * 1000) })
+  } catch (error) { fail(422, error instanceof Error ? error.message : 'Résultat invalide.') }
+  const result = validated.result
+  const inputs = toHex(Uint8Array.from(result.inputs, input => (input.lane + 1) * 3 + ['none', 'jump', 'crouch'].indexOf(input.action)))
+  const chain = chainWriter(config)
+  await chain.write(encodeFunctionData({ abi: monadSurfAbi, functionName: 'submitRun', args: [run.id, BigInt(result.score), BigInt(result.coins), result.tickCount, inputs] }), async () => (await chain.run(run.id)).submittedBlock !== BigInt(0))
+  const saved = await chain.run(run.id)
+  if (saved.replayHash !== keccak256(inputs) || saved.score !== BigInt(result.score) || saved.coins !== BigInt(result.coins) || saved.tickCount !== result.tickCount) fail(409, 'Un autre résultat est déjà enregistré pour cette partie.')
+  return chain.status(run.id)
 })

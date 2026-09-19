@@ -14,9 +14,6 @@ importers:
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.150.0)(@types/node@24.13.6)(@vue/compiler-sfc@3.5.43)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.5)(rolldown@1.2.9)(rollup-plugin-visualizer@7.1.1(rolldown@1.2.9)(rollup@4.63.4))(rollup@4.63.4)(srvx@0.11.22)(terser@5.51.2)(typescript@5.9.3)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2))(vue-tsc@3.3.11(typescript@5.9.3))
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
       three:
         specifier: 0.183.1
         version: 0.183.1
@@ -2618,10 +2615,6 @@ packages:
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
-
-  postgres@3.4.9:
-    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
-    engines: {node: '>=12'}
 
   powershell-utils@0.1.0:
     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
@@ -6250,8 +6243,6 @@ snapshots:
       nanoid: 3.3.19
       picocolors: 1.1.1
       source-map-js: 1.2.1
-
-  postgres@3.4.9: {}
 
   powershell-utils@0.1.0: {}
 

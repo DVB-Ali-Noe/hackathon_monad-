@@ -51,8 +51,7 @@ fantôme. Le serveur doit vérifier son rattachement à une session et empêcher
 crédit multiple. Le pseudo est un nom d'affichage, pas une preuve d'identité.
 
 `simulationVersion` identifie les règles, le générateur et la fréquence de simulation.
-`tickCount` fixe la durée simulée, indépendamment des pauses. Le mécanisme de création
-de session et le format réseau restent à préciser avec le backend.
+`tickCount` fixe la durée simulée, indépendamment des pauses. Les sessions et les paramètres de partie sont inscrits dans le contrat avant le départ.
 
 ## 3. Commandes et encodage
 
@@ -60,9 +59,11 @@ Le format proposé exprime le couloir cible et l'action séparément : le retour
 centre est explicite, et un changement de couloir peut accompagner un saut ou un
 accroupissement. Les règles de déclenchement et de maintien restent à préciser.
 
-Pour commencer, une entrée par tick suffit. La compression des commandes est une
-optimisation ultérieure ; aucun encodage à 3 bits ni budget de stockage n'est figé.
-Le format doit conserver toutes les commandes nécessaires au rejeu exact.
+Le JSON contient une entrée par tick. Après validation, le serveur compacte chaque
+entrée dans un octet : `(lane + 1) * 3 + action`, avec `none=0`, `jump=1`,
+`crouch=2`. Pour décoder : `lane = floor(octet / 3) - 1`, `action = octet % 3`.
+Ces octets sont conservés dans l’événement onchain `RunSubmitted` ; la graine,
+la version, les ticks et leur empreinte sont accessibles par `getRun`.
 
 ## 4. Pas de temps fixe
 
@@ -100,8 +101,7 @@ partie. Les deux simulations avancent sur les mêmes ticks et se mettent en paus
 ensemble. Un replay d'une version incompatible ne doit pas être joué avec de
 nouvelles règles.
 
-Le stockage des replays et le choix entre le joueur précédent et le leader restent
-à préciser dans le backend. Le rejeu exact est la cible ; une trajectoire inventée
+Les replays sont conservés onchain ; le fantôme reste retiré de l’interface. Le rejeu exact est la cible ; une trajectoire inventée
 ne doit pas être présentée comme la course enregistrée d'un joueur.
 
 ## 7. Module de simulation partagé
@@ -110,4 +110,4 @@ Le moteur est un module pur, sans accès au DOM ni au réseau. Le navigateur l'u
 pour jouer, le serveur pour vérifier et le rendu three.js pour afficher le fantôme.
 
 La graine et les commandes suffisent à reproduire une partie avec la même version
-du moteur. La connexion à Monad intervient après le jeu pour enregistrer le résultat.
+du moteur. Monad conserve la préparation avant le jeu, puis le résultat et le replay après validation.

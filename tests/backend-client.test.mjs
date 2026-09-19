@@ -119,8 +119,8 @@ test('la confirmation relayer recharge le classement et conserve le score exact'
     if (path === '/api/leaderboard') return ++rankings === 1 ? ranking : updated
     if (path === '/api/session') return { playerId: run.playerId, pseudo: run.pseudo }
     if (path === '/api/runs') return run
-    if (path === '/api/run') return { runId: run.runId, status: 'queued', transactionHash: null, error: null }
-    if (path.endsWith('/relay')) return { runId: run.runId, status: 'confirmed', transactionHash: '0x123', error: null }
+    if (path === '/api/run') return { runId: run.runId, status: 'submitted', transactionHash: null, error: null }
+    if (path === `/api/runs/${run.runId}`) return { runId: run.runId, status: 'confirmed', transactionHash: '0x123', error: null }
     throw new Error('Route inattendue')
   })
   await backend.prepare('Noé')

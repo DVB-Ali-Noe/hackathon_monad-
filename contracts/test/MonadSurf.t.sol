@@ -8,6 +8,7 @@ interface Vm {
     function expectRevert(bytes4 revertData) external;
     function expectRevert(bytes calldata revertData) external;
     function expectEmit(bool topic1, bool topic2, bool topic3, bool data, address emitter) external;
+    function warp(uint256 timestamp) external;
 }
 
 contract MonadSurfTest {
@@ -17,11 +18,11 @@ contract MonadSurfTest {
     bytes32 private constant PLAYER_B = bytes32(uint256(2));
     bytes32 private constant RUN_A = bytes32(uint256(101));
     bytes32 private constant RUN_B = bytes32(uint256(102));
-    bytes32 private constant RUN_C = bytes32(uint256(103));
-
     MonadSurf private game;
 
-    event RunSubmitted(bytes32 indexed runId, bytes32 indexed playerId, uint64 score, uint64 coins);
+    event RunSubmitted(
+        bytes32 indexed runId, bytes32 indexed playerId, uint64 score, uint64 coins, uint32 tickCount, bytes inputs
+    );
 
     function setUp() public {
         game = new MonadSurf(RELAYER);
@@ -32,127 +33,178 @@ contract MonadSurfTest {
         new MonadSurf(address(0));
     }
 
-    function testRelayerRecordsResultAndEvent() public {
-        require(game.relayer() == RELAYER, "relayer");
+    function testProfileAndSessionAreOnchain() public {
+        _save(PLAYER_A, unicode"Noé");
+        MonadSurf.Player memory player = game.getPlayer(PLAYER_A);
+        require(keccak256(bytes(player.pseudo)) == keccak256(unicode"Noé"), "pseudo");
+        require(player.sessionExpiresAt == block.timestamp + 30 days, "expiry");
+        _save(PLAYER_A, "Updated");
+        require(keccak256(bytes(game.getPlayer(PLAYER_A).pseudo)) == keccak256("Updated"), "rename");
+    }
+
+    function testRejectsEmptyAndOversizedPseudo() public {
+        vm.expectRevert(MonadSurf.InvalidPseudo.selector);
+        _save(PLAYER_A, "");
+        vm.expectRevert(MonadSurf.InvalidPseudo.selector);
+        _save(PLAYER_A, string(new bytes(81)));
+    }
+
+    function testRejectsZeroPlayer() public {
+        vm.expectRevert(MonadSurf.InvalidPlayerId.selector);
+        _save(bytes32(0), "Player");
+    }
+
+    function testRevokedSessionCannotRestartOrBeReactivated() public {
+        _save(PLAYER_A, "Player");
+        vm.prank(RELAYER);
+        game.revokeSession(PLAYER_A);
+        vm.expectRevert(MonadSurf.InactiveSession.selector);
+        _start(RUN_A, PLAYER_A);
+        vm.expectRevert(MonadSurf.InactiveSession.selector);
+        _save(PLAYER_A, "Again");
+    }
+
+    function testExpiredSessionCannotStart() public {
+        _save(PLAYER_A, "Player");
+        vm.warp(block.timestamp + 30 days);
+        vm.expectRevert(MonadSurf.InactiveSession.selector);
+        _start(RUN_A, PLAYER_A);
+    }
+
+    function testRunKeepsSeedVersionTimeAndPseudo() public {
+        _prepare(RUN_A, PLAYER_A);
+        _save(PLAYER_A, "Changed");
+        MonadSurf.Run memory run = game.getRun(RUN_A);
+        require(run.playerId == PLAYER_A && run.createdAt == block.timestamp, "owner/time");
+        require(run.seed == keccak256("seed") && run.simulationVersion == keccak256("version"), "simulation");
+        require(keccak256(bytes(run.pseudo)) == keccak256("Player"), "snapshot pseudo");
+        vm.expectRevert(MonadSurf.RunAlreadyStarted.selector);
+        _start(RUN_A, PLAYER_A);
+    }
+
+    function testRejectsZeroRun() public {
+        _save(PLAYER_A, "Player");
+        vm.expectRevert(MonadSurf.InvalidRunId.selector);
+        _start(bytes32(0), PLAYER_A);
+    }
+
+    function testReplayAndResultAreOnchain() public {
+        _prepare(RUN_A, PLAYER_A);
         vm.expectEmit(true, true, false, true, address(game));
-        emit RunSubmitted(RUN_A, PLAYER_A, 100, 7);
-        _submit(RUN_A, PLAYER_A, 100, 7);
-
+        emit RunSubmitted(RUN_A, PLAYER_A, 100, 7, 1, hex"03");
+        _finish(RUN_A, 100, 7);
+        MonadSurf.Run memory run = game.getRun(RUN_A);
+        require(run.replayHash == keccak256(hex"03") && run.tickCount == 1, "replay");
+        require(run.score == 100 && run.coins == 7 && run.submittedBlock == block.number, "result");
         _assertPlayer(PLAYER_A, 100, 7, 1);
-        require(game.processedRuns(RUN_A), "run not recorded");
     }
 
-    function testDeployerHasNoWritePrivilege() public {
-        vm.expectRevert(MonadSurf.NotRelayer.selector);
-        game.submitRun(RUN_A, PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 0, 0, 0);
-        require(!game.processedRuns(RUN_A), "run consumed");
+    function testDuplicateCannotCreditTwiceOrChangeResult() public {
+        _prepare(RUN_A, PLAYER_A);
+        _finish(RUN_A, 100, 7);
+        vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, RUN_A));
+        _finish(RUN_A, 999, 999);
+        _assertPlayer(PLAYER_A, 100, 7, 1);
     }
 
-    function testFuzzRejectsUnauthorizedSender(address sender) public {
+    function testRejectsUnknownRun() public {
+        vm.expectRevert(MonadSurf.UnknownRun.selector);
+        _finish(RUN_A, 100, 7);
+    }
+
+    function testRejectsExpiredRun() public {
+        _prepare(RUN_A, PLAYER_A);
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.expectRevert(MonadSurf.RunExpired.selector);
+        _finish(RUN_A, 100, 7);
+    }
+
+    function testRejectsInvalidReplayLengthOrDuration() public {
+        _prepare(RUN_A, PLAYER_A);
+        vm.expectRevert(MonadSurf.InvalidReplay.selector);
+        vm.prank(RELAYER);
+        game.submitRun(RUN_A, 100, 7, 2, hex"03");
+        vm.expectRevert(MonadSurf.InvalidReplay.selector);
+        vm.prank(RELAYER);
+        game.submitRun(RUN_A, 100, 7, 121, new bytes(121));
+        require(!game.processedRuns(RUN_A), "consumed invalid run");
+    }
+
+    function testFuzzEveryMutationRequiresRelayer(address sender) public {
         if (sender == RELAYER) return;
         vm.expectRevert(MonadSurf.NotRelayer.selector);
         vm.prank(sender);
-        game.submitRun(RUN_A, PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 0, 0, 0);
-        require(!game.processedRuns(RUN_A), "run consumed");
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 100, 7, 1);
+        game.savePlayer(PLAYER_A, "Intruder");
+        vm.expectRevert(MonadSurf.NotRelayer.selector);
+        vm.prank(sender);
+        game.revokeSession(PLAYER_A);
+        vm.expectRevert(MonadSurf.NotRelayer.selector);
+        vm.prank(sender);
+        game.startRun(RUN_A, PLAYER_A, bytes32(0), bytes32(0));
+        vm.expectRevert(MonadSurf.NotRelayer.selector);
+        vm.prank(sender);
+        game.submitRun(RUN_A, 100, 7, 1, hex"03");
     }
 
-    function testRejectsDuplicateRun() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, RUN_A));
-        _submit(RUN_A, PLAYER_A, 100, 7);
+    function testPlayersRemainIsolated() public {
+        _prepare(RUN_A, PLAYER_A);
+        _prepare(RUN_B, PLAYER_B);
+        _finish(RUN_A, 100, 7);
+        _finish(RUN_B, 200, 10);
         _assertPlayer(PLAYER_A, 100, 7, 1);
-    }
-
-    function testRejectsDuplicateRunWithChangedResult() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, RUN_A));
-        _submit(RUN_A, PLAYER_A, 999, 999);
-        _assertPlayer(PLAYER_A, 100, 7, 1);
-    }
-
-    function testRunCannotBeReassignedToAnotherPlayer() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, RUN_A));
-        _submit(RUN_A, PLAYER_B, 200, 10);
-        _assertPlayer(PLAYER_A, 100, 7, 1);
-        _assertPlayer(PLAYER_B, 0, 0, 0);
-    }
-
-    function testPlayersAreIsolated() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        _submit(RUN_B, PLAYER_B, 200, 10);
-        _submit(RUN_C, PLAYER_A, 50, 3);
-        _assertPlayer(PLAYER_A, 100, 10, 2);
         _assertPlayer(PLAYER_B, 200, 10, 1);
     }
 
-    function testBestScoreOnlyIncreasesAndCoinsAccumulate() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        _submit(RUN_B, PLAYER_A, 50, 3);
-        _assertPlayer(PLAYER_A, 100, 10, 2);
-        _submit(RUN_C, PLAYER_A, 200, 2);
-        _assertPlayer(PLAYER_A, 200, 12, 3);
+    function testFuzzAggregation(uint64 a, uint64 b, uint64 ca, uint64 cb) public {
+        _prepare(RUN_A, PLAYER_A);
+        _prepare(RUN_B, PLAYER_A);
+        _finish(RUN_A, a, ca);
+        _finish(RUN_B, b, cb);
+        _assertPlayer(PLAYER_A, a > b ? a : b, uint128(ca) + uint128(cb), 2);
     }
 
-    function testEqualScoreStillCreditsRunAndCoins() public {
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        _submit(RUN_B, PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 100, 14, 2);
+    function testSharedWriteQuotaResetsNextMinute() public {
+        vm.warp(120);
+        for (uint256 i; i < 60; ++i) {
+            _save(bytes32(i + 1), "Player");
+        }
+        require(!game.writeAvailable(), "quota not shared");
+        vm.expectRevert(MonadSurf.WriteLimit.selector);
+        _save(bytes32(uint256(61)), "Player");
+        vm.warp(180);
+        require(game.writeAvailable(), "quota not reset");
+        _save(bytes32(uint256(61)), "Player");
     }
 
-    function testZeroResultIsRecordedOnce() public {
-        _submit(RUN_A, PLAYER_A, 0, 0);
-        _assertPlayer(PLAYER_A, 0, 0, 1);
-        vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, RUN_A));
-        _submit(RUN_A, PLAYER_A, 0, 0);
-        _assertPlayer(PLAYER_A, 0, 0, 1);
+    function testRenameIsReflectedInLeaderboard() public {
+        _prepare(RUN_A, PLAYER_A);
+        _finish(RUN_A, 100, 7);
+        _save(PLAYER_A, "Renamed");
+        require(keccak256(bytes(game.getLeaderboard()[0].pseudo)) == keccak256("Renamed"), "stale pseudo");
     }
 
-    function testRejectsZeroPlayerWithoutConsumingRun() public {
-        vm.expectRevert(MonadSurf.InvalidPlayerId.selector);
-        _submit(RUN_A, bytes32(0), 100, 7);
-        require(!game.processedRuns(RUN_A), "run consumed");
-        _submit(RUN_A, PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 100, 7, 1);
-    }
-
-    function testRejectsZeroRunWithoutCreditingPlayer() public {
-        vm.expectRevert(MonadSurf.InvalidRunId.selector);
-        _submit(bytes32(0), PLAYER_A, 100, 7);
-        _assertPlayer(PLAYER_A, 0, 0, 0);
-        require(!game.processedRuns(bytes32(0)), "zero run consumed");
-    }
-
-    function testUnknownPlayerHasZeroStats() public view {
-        _assertPlayer(PLAYER_A, 0, 0, 0);
-    }
-
-    function testCoinBalanceCanExceedUint64() public {
-        _submit(RUN_A, PLAYER_A, type(uint64).max, type(uint64).max);
-        _submit(RUN_B, PLAYER_A, 0, type(uint64).max);
-        _assertPlayer(PLAYER_A, type(uint64).max, uint128(type(uint64).max) * 2, 2);
-    }
-
-    function testFuzzAggregation(uint64 scoreA, uint64 scoreB, uint64 coinsA, uint64 coinsB) public {
-        _submit(RUN_A, PLAYER_A, scoreA, coinsA);
-        _submit(RUN_B, PLAYER_A, scoreB, coinsB);
-        _assertPlayer(PLAYER_A, scoreA > scoreB ? scoreA : scoreB, uint128(coinsA) + uint128(coinsB), 2);
-        require(game.processedRuns(RUN_A) && game.processedRuns(RUN_B), "missing runs");
-    }
-
-    function _submit(bytes32 runId, bytes32 playerId, uint64 score, uint64 coins) private {
+    function _save(bytes32 playerId, string memory pseudo) private {
         vm.prank(RELAYER);
-        game.submitRun(runId, playerId, score, coins);
+        game.savePlayer(playerId, pseudo);
     }
 
-    function _assertPlayer(bytes32 playerId, uint64 bestScore, uint128 coins, uint64 runs) private view {
+    function _start(bytes32 runId, bytes32 playerId) private {
+        vm.prank(RELAYER);
+        game.startRun(runId, playerId, keccak256("seed"), keccak256("version"));
+    }
+
+    function _prepare(bytes32 runId, bytes32 playerId) private {
+        if (bytes(game.getPlayer(playerId).pseudo).length == 0) _save(playerId, "Player");
+        _start(runId, playerId);
+    }
+
+    function _finish(bytes32 runId, uint64 score, uint64 coins) private {
+        vm.prank(RELAYER);
+        game.submitRun(runId, score, coins, 1, hex"03");
+    }
+
+    function _assertPlayer(bytes32 playerId, uint64 best, uint128 coins, uint64 runs) private view {
         MonadSurf.Player memory player = game.getPlayer(playerId);
-        require(player.bestScore == bestScore, "best score");
-        require(player.coins == coins, "coins");
-        require(player.runs == runs, "runs");
+        require(player.bestScore == best && player.coins == coins && player.runs == runs, "stats");
     }
 }

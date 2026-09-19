@@ -1,13 +1,14 @@
-import type { RunStatus } from '../../shared/api'
-import type { RunResult } from '../../shared/types'
+import { zeroHash } from 'viem'
+import type { Hex } from 'viem'
+import { chainReader, versionHash } from './contract.ts'
+import type { ChainConfig } from './contract.ts'
+import { fail } from './http.ts'
+import { HEX_ID } from './replay.ts'
 
-export type StoredRun = {
-  id: string; player_id: string; pseudo: string; seed: string; simulation_version: string
-  contract_address: string; created_at: Date; expires_at: Date; status: RunStatus['status']
-  payload_hash: string | null; result: RunResult | null; transaction_hash: string | null
-  raw_transaction: string | null; error: string | null
-}
-
-export function runStatus(run: StoredRun): RunStatus {
-  return { runId: run.id, status: run.status, transactionHash: run.transaction_hash, error: run.error }
+export async function ownedRun(config: ChainConfig, id: unknown, playerId: Hex) {
+  if (typeof id !== 'string' || !HEX_ID.test(id)) fail(400, 'Identifiant de partie invalide.')
+  const run = await chainReader(config).run(id as Hex)
+  if (run.playerId === zeroHash || run.playerId !== playerId) fail(404, 'Partie introuvable.')
+  if (run.simulationVersion !== versionHash) fail(409, 'Cette partie utilise une ancienne version du moteur.')
+  return { ...run, id: id as Hex }
 }

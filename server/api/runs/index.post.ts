@@ -1,24 +1,21 @@
 import { randomBytes } from 'node:crypto'
+import { encodeFunctionData, zeroHash } from 'viem'
+import type { Hex } from 'viem'
 import { SIMULATION_VERSION } from '../../../shared/game/engine.ts'
-import { apiHandler, databaseFor, fail, jsonBody, rateLimit, requirePlayer } from '../../utils/http.ts'
-import { chainWriter } from '../../utils/contract.ts'
-import type { StoredRun } from '../../utils/runs.ts'
+import { apiHandler, fail, hashToken, jsonBody, rateLimit, requirePlayer } from '../../utils/http.ts'
+import { chainWriter, monadSurfAbi, versionHash } from '../../utils/contract.ts'
 
 export default apiHandler(async (event) => {
   const body = await jsonBody(event)
-  if (typeof body.requestKey !== 'string' || !/^[\da-f-]{36}$/.test(body.requestKey)) fail(400, 'Clé de création invalide.')
+  if (typeof body.requestKey !== 'string' || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/.test(body.requestKey)) fail(400, 'Clé de création invalide.')
   const player = await requirePlayer(event)
-  await rateLimit(event, 'runs', 12, player.id)
-  const config = useRuntimeConfig(event)
-  await chainWriter(config).check()
-  const sql = databaseFor(event)
-  const id = `0x${randomBytes(32).toString('hex')}`
-  const seed = randomBytes(32).toString('hex')
-  const [run] = await sql<StoredRun[]>`
-    insert into runs (id, player_id, request_key, pseudo, seed, simulation_version, contract_address)
-    values (${id}, ${player.id}, ${body.requestKey}, ${player.pseudo}, ${seed}, ${SIMULATION_VERSION}, ${config.monadContractAddress.toLowerCase()})
-    on conflict (player_id, request_key) do update set request_key = excluded.request_key returning *`
-  if (run!.pseudo !== player.pseudo || run!.status !== 'ready' || run!.expires_at.getTime() <= Date.now()) fail(409, 'Cette création de partie a déjà été utilisée.')
-  if (run!.simulation_version !== SIMULATION_VERSION || run!.contract_address !== config.monadContractAddress.toLowerCase()) fail(409, 'Cette partie appartient à une ancienne configuration.')
-  return { runId: run!.id, playerId: player.id, pseudo: run!.pseudo, seed: run!.seed, simulationVersion: run!.simulation_version, expiresAt: run!.expires_at.toISOString() }
+  rateLimit(event, 'runs', 12, player.id)
+  const chain = chainWriter(useRuntimeConfig(event))
+  const id: Hex = `0x${hashToken(`${player.id}:${body.requestKey}`)}`
+  const seed: Hex = `0x${randomBytes(32).toString('hex')}`
+  await chain.write(encodeFunctionData({ abi: monadSurfAbi, functionName: 'startRun', args: [id, player.id, seed, versionHash] }), async () => (await chain.run(id)).playerId !== zeroHash)
+  const run = await chain.run(id)
+  const expiresAt = Number(run.createdAt) * 1000 + 86400000
+  if (run.playerId !== player.id || run.pseudo !== player.pseudo || run.submittedBlock || expiresAt <= Date.now() || run.simulationVersion !== versionHash) fail(409, 'Cette création de partie a déjà été utilisée.')
+  return { runId: id, playerId: player.id, pseudo: run.pseudo, seed: run.seed.slice(2), simulationVersion: SIMULATION_VERSION, expiresAt: new Date(expiresAt).toISOString() }
 })

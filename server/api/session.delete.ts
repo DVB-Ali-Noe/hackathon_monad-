@@ -1,10 +1,17 @@
 import { deleteCookie } from 'h3'
-import { apiHandler, cookieSettings, databaseFor, jsonBody, sessionHash } from '../utils/http.ts'
+import { encodeFunctionData } from 'viem'
+import { apiHandler, cookieSettings, jsonBody, rateLimit, sessionId } from '../utils/http.ts'
+import { chainWriter, monadSurfAbi } from '../utils/contract.ts'
 
 export default apiHandler(async (event) => {
   await jsonBody(event)
-  const hash = sessionHash(event)
-  if (hash) await databaseFor(event)`update players set session_expires_at = now() where session_hash = ${hash}`
-  deleteCookie(event, cookieSettings(event).name, { path: '/' })
+  rateLimit(event, 'session', 20)
+  const id = sessionId(event)
+  if (id) {
+    const chain = chainWriter(useRuntimeConfig(event))
+    await chain.write(encodeFunctionData({ abi: monadSurfAbi, functionName: 'revokeSession', args: [id] }), async () => (await chain.player(id)).sessionExpiresAt === BigInt(0))
+  }
+  const { name, secure } = cookieSettings(event)
+  deleteCookie(event, name, { path: '/', secure, httpOnly: true, sameSite: 'strict' })
   return { cleared: true }
 })

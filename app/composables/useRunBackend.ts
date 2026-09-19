@@ -58,10 +58,10 @@ export function useRunBackend() {
     hasPrepared = true
     let run: PreparedRun | null = null
     try {
-      const session = await $fetch<SessionInfo>('/api/session', { method: 'POST', body: { pseudo }, timeout: 7000, retry: 0 })
+      const session = await $fetch<SessionInfo>('/api/session', { method: 'POST', body: { pseudo }, timeout: 55000, retry: 0 })
       if (current !== generation) return null
       playerId.value = session.playerId
-      run = await $fetch<PreparedRun>('/api/runs', { method: 'POST', body: { requestKey: crypto.randomUUID() }, timeout: 7000, retry: 0 })
+      run = await $fetch<PreparedRun>('/api/runs', { method: 'POST', body: { requestKey: crypto.randomUUID() }, timeout: 55000, retry: 0 })
     } catch {
       if (current === generation) notice.value = 'Partie locale : l’enregistrement sur Monad est indisponible.'
     }
@@ -71,12 +71,12 @@ export function useRunBackend() {
 
   async function poll(runId: string, current: number) {
     try {
-      const status = await $fetch<RunStatus>(`/api/runs/${runId}/relay`, { method: 'POST', body: {}, timeout: 25000, retry: 0 })
+      const status = await $fetch<RunStatus>(`/api/runs/${runId}`, { timeout: 15000, retry: 0 })
       if (current !== generation) return
       updateSubmission(status)
-      if (status.status === 'queued' || status.status === 'submitted') timer = setTimeout(() => { void poll(runId, current) }, 3000)
+      if (status.status === 'submitted') timer = setTimeout(() => { void poll(runId, current) }, 3000)
     } catch {
-      if (current === generation) saveError.value = 'Le résultat est conservé par le serveur. Réessaie pour reprendre sa confirmation.'
+      if (current === generation) saveError.value = 'La confirmation sur Monad est indisponible. Réessaie pour vérifier la transaction.'
     }
   }
 
@@ -89,10 +89,10 @@ export function useRunBackend() {
     saving.value = true
     saveError.value = ''
     try {
-      const status = await $fetch<RunStatus>('/api/run', { method: 'POST', body: result, timeout: 20000, retry: 0 })
+      const status = await $fetch<RunStatus>('/api/run', { method: 'POST', body: result, timeout: 55000, retry: 0 })
       if (current !== generation) return
       updateSubmission(status)
-      if (status.status === 'queued' || status.status === 'submitted') void poll(result.runId, current)
+      if (status.status === 'submitted') void poll(result.runId, current)
     } catch (error) {
       if (current !== generation) return
       const message = (error as { data?: { data?: { message?: string } } }).data?.data?.message
@@ -105,7 +105,7 @@ export function useRunBackend() {
   async function changePlayer() {
     cancel()
     try {
-      await $fetch('/api/session', { method: 'DELETE', body: {}, timeout: 7000, retry: 0 })
+      await $fetch('/api/session', { method: 'DELETE', body: {}, timeout: 55000, retry: 0 })
       playerId.value = ''
       return true
     } catch {

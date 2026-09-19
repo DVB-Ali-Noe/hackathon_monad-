@@ -8,8 +8,8 @@ Le [README racine](../README.md) décrit le développement et le déploiement.
 | Document | Contenu |
 | --- | --- |
 | [interface.md](interface.md) | Commandes, graine aléatoire, simulation partagée et rejeu |
-| [backend-monad.md](backend-monad.md) | Contrat de résultats et top 25 |
-| [backend-api.md](backend-api.md) | API implémentée, configuration PostgreSQL/relayer et tests |
+| [backend-monad.md](backend-monad.md) | Profils, sessions, parties, replays et top 25 onchain |
+| [backend-api.md](backend-api.md) | API implémentée, configuration du relayer sans base externe et tests |
 | [monad-reference.md](monad-reference.md) | Références réseau Monad à consulter lors de l'implémentation |
 | [demo-et-pitch.md](demo-et-pitch.md) | Organisation proposée de la démo et du pitch |
 

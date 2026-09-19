@@ -146,23 +146,23 @@ contract LeaderboardTest {
         bytes32 playerId = bytes32(uint256(1));
 
         vm.expectRevert(MonadSurf.NotRelayer.selector);
-        game.submitRun(bytes32(uint256(100)), playerId, 999, 99);
+        game.submitRun(bytes32(uint256(100)), 999, 99, 1, hex"03");
         require(!game.processedRuns(bytes32(uint256(100))), "unauthorized run consumed");
         require(keccak256(abi.encode(game.getLeaderboard())) == beforeHash, "unauthorized change");
 
         vm.expectRevert(abi.encodeWithSelector(MonadSurf.RunAlreadySubmitted.selector, bytes32(uint256(1))));
         vm.prank(RELAYER);
-        game.submitRun(bytes32(uint256(1)), playerId, 999, 99);
+        game.submitRun(bytes32(uint256(1)), 999, 99, 1, hex"03");
         require(keccak256(abi.encode(game.getLeaderboard())) == beforeHash, "duplicate change");
 
         vm.expectRevert(MonadSurf.InvalidRunId.selector);
         vm.prank(RELAYER);
-        game.submitRun(bytes32(0), playerId, 999, 99);
+        game.submitRun(bytes32(0), 999, 99, 1, hex"03");
         require(keccak256(abi.encode(game.getLeaderboard())) == beforeHash, "zero run change");
 
-        vm.expectRevert(MonadSurf.InvalidPlayerId.selector);
+        vm.expectRevert(MonadSurf.UnknownRun.selector);
         vm.prank(RELAYER);
-        game.submitRun(bytes32(uint256(100)), bytes32(0), 999, 99);
+        game.submitRun(bytes32(uint256(100)), 999, 99, 1, hex"03");
         require(keccak256(abi.encode(game.getLeaderboard())) == beforeHash, "zero player change");
         require(!game.processedRuns(bytes32(uint256(100))), "invalid run consumed");
         MonadSurf.Player memory player = game.getPlayer(playerId);
@@ -233,8 +233,15 @@ contract LeaderboardTest {
 
     function _submit(uint256 playerId, uint64 score) private {
         ++nextRunId;
+        vm.warp(block.timestamp + 5);
+        if (bytes(game.getPlayer(bytes32(playerId)).pseudo).length == 0) {
+            vm.prank(RELAYER);
+            game.savePlayer(bytes32(playerId), "Player");
+        }
         vm.prank(RELAYER);
-        game.submitRun(bytes32(nextRunId), bytes32(playerId), score, 1);
+        game.startRun(bytes32(nextRunId), bytes32(playerId), keccak256("seed"), keccak256("version"));
+        vm.prank(RELAYER);
+        game.submitRun(bytes32(nextRunId), score, 1, 1, hex"03");
     }
 
     function _assertEntry(MonadSurf.LeaderboardEntry memory entry, uint256 playerId, uint64 score) private pure {

@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { createError, defineEventHandler, getCookie, getHeader, getRequestIP, getRequestURL, getRequestWebStream, setHeader } from 'h3'
 import type { H3Event } from 'h3'
-import { getDatabase } from './database.ts'
+import type { Hex } from 'viem'
+import { chainReader } from './contract.ts'
 
 export function fail(statusCode: number, message: string): never {
   throw createError({ statusCode, data: { message } })
@@ -13,15 +14,10 @@ export function apiHandler<T>(handler: (event: H3Event) => Promise<T>) {
     try { return await handler(event) }
     catch (error) {
       if (error && typeof error === 'object' && 'statusCode' in error) throw error
+      if (error instanceof Error && error.message === 'CHAIN_WRITE_LIMIT') fail(429, 'Le quota d’enregistrement est atteint. Réessaie dans une minute.')
       fail(503, 'Le service est temporairement indisponible. Réessaie dans un instant.')
     }
   })
-}
-
-export function databaseFor(event: H3Event) {
-  const config = useRuntimeConfig(event)
-  if (!config.databaseUrl) fail(503, 'L’enregistrement des scores n’est pas encore configuré.')
-  return getDatabase(config.databaseUrl)
 }
 
 export function cookieSettings(event: H3Event) {
@@ -32,19 +28,19 @@ export function cookieSettings(event: H3Event) {
 
 export function hashToken(token: string) { return createHash('sha256').update(token).digest('hex') }
 
-export function sessionHash(event: H3Event) {
+export function sessionId(event: H3Event): Hex | null {
   const token = getCookie(event, cookieSettings(event).name)
-  return token && /^[a-f0-9]{64}$/.test(token) ? hashToken(token) : null
+  return token && /^[a-f0-9]{64}$/.test(token) ? `0x${hashToken(token)}` : null
 }
 
 export async function requirePlayer(event: H3Event) {
-  const sql = databaseFor(event)
-  const hash = sessionHash(event)
-  if (!hash) fail(401, 'La session a expiré. Reviens à la préparation.')
-  const [player] = await sql<{ id: string; pseudo: string }[]>`
-    select id, pseudo from players where session_hash = ${hash} and session_expires_at > now()`
-  if (!player) fail(401, 'La session a expiré. Reviens à la préparation.')
-  return player
+  const id = sessionId(event)
+  if (!id) fail(401, 'La session a expiré. Reviens à la préparation.')
+  const chain = chainReader(useRuntimeConfig(event))
+  await chain.checkNetwork()
+  const player = await chain.player(id)
+  if (player.sessionExpiresAt * BigInt(1000) <= BigInt(Date.now())) fail(401, 'La session a expiré. Reviens à la préparation.')
+  return { id, pseudo: player.pseudo }
 }
 
 export function assertSameOrigin(event: H3Event) {
@@ -69,7 +65,8 @@ export async function jsonBody(event: H3Event, limit = 4096): Promise<Record<str
       const { done, value } = await reader.read()
       if (done) break
       size += value.byteLength
-      if (size <= limit) chunks.push(Buffer.from(value))
+      if (size > limit) { await reader.cancel(); fail(413, 'Requête trop volumineuse.') }
+      chunks.push(Buffer.from(value))
     }
   } finally { reader.releaseLock() }
   if (size > limit) fail(413, 'Requête trop volumineuse.')
@@ -80,15 +77,20 @@ export async function jsonBody(event: H3Event, limit = 4096): Promise<Record<str
   } catch { fail(400, 'Corps JSON invalide.') }
 }
 
-export async function rateLimit(event: H3Event, scope: string, limit: number, identity?: string) {
-  const sql = databaseFor(event)
+const limits = new Map<string, { count: number; expires: number }>()
+
+export function rateLimit(event: H3Event, scope: string, limit: number, identity?: string) {
   const ip = process.env.VERCEL ? getHeader(event, 'x-vercel-forwarded-for')?.split(',')[0] : getRequestIP(event)
   const key = `${scope}:${hashToken(identity || ip || 'unknown')}`
-  const [entry] = await sql<{ count: number }[]>`
-    insert into request_limits (key) values (${key})
-    on conflict (key) do update set
-      count = case when request_limits.window_start < now() - interval '1 minute' then 1 else request_limits.count + 1 end,
-      window_start = case when request_limits.window_start < now() - interval '1 minute' then now() else request_limits.window_start end
-    returning count`
-  if (entry!.count > limit) fail(429, 'Trop de requêtes. Attends une minute avant de réessayer.')
+  const now = Date.now()
+  let entry = limits.get(key)
+  if (!entry || entry.expires <= now) {
+    if (limits.size >= 10000) {
+      for (const [id, value] of limits) if (value.expires <= now) limits.delete(id)
+      if (limits.size >= 10000) fail(429, 'Trop de requêtes. Réessaie dans une minute.')
+    }
+    entry = { count: 0, expires: now + 60000 }
+    limits.set(key, entry)
+  }
+  if (++entry.count > limit) fail(429, 'Trop de requêtes. Attends une minute avant de réessayer.')
 }

@@ -82,7 +82,7 @@ La lecture de la vidéo n’était pas accessible dans l’environnement. Les vi
 combinent géométrie locale et textures du dépôt ci-dessus ; les assets officiels
 ne sont pas importés.
 
-La préparation crée une session et une partie serveur. À la fin, le résultat est
+La préparation inscrit une session et une partie sur Monad via le serveur. À la fin, le résultat est
 rejoué par le serveur, envoyé par le relayer et suivi jusqu’à confirmation. En cas
 d’indisponibilité au départ, l’interface annonce une partie locale non enregistrée.
 Le fantôme reste retiré à la demande de Noé.

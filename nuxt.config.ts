@@ -4,17 +4,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-09-19',
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
-    databaseUrl: '',
     siteOrigin: '',
     monadRpcUrl: '',
     monadContractAddress: '',
     relayerPrivateKey: '',
-    relaySecret: '',
   },
   nitro: {
     vercel: {
       functions: {
         runtime: 'nodejs24.x',
+        maxDuration: 60,
       },
     },
   },

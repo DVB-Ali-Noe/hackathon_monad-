@@ -4,7 +4,7 @@ export type SessionInfo = { playerId: string; pseudo: string }
 export type PreparedRun = RunConfig & SessionInfo & { runId: string; expiresAt: string }
 export type RunStatus = {
   runId: string
-  status: 'ready' | 'queued' | 'submitted' | 'confirmed' | 'failed'
+  status: 'ready' | 'submitted' | 'confirmed'
   transactionHash: string | null
   error: string | null
 }

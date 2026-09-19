@@ -51,8 +51,7 @@ aux mouvements, aucune autre fonctionnalité ne sauve la démonstration.
 
 Il n'y a pas de connexion de wallet. Le joueur saisit un pseudo et le serveur
 enregistre le résultat pour lui avec une clé relayer privée, qui paie les transactions.
-Le pseudo sert à l'affichage ; le mécanisme de session identifiant le joueur reste
-à définir. L'inventaire n'est pas lié à un wallet joueur.
+Le pseudo et l’expiration de session sont inscrits onchain ; un cookie privé identifie le joueur. L'inventaire n'est pas lié à un wallet joueur.
 
 ## 4. Gameplay
 
@@ -254,9 +253,9 @@ remplir le classement. Les horaires exacts restent à confirmer.
 État de l’intégration sur `dev` : runner three.js en FPV, caméra/calibration,
 moteur partagé 60 Hz, contrat avec top 25, sessions, rejeu serveur, relayer et
 classement raccordés. Le fantôme a été retiré du front à la demande de Noé.
-Le contrat testnet, PostgreSQL hébergé et le worker doivent être configurés avant
-l’enregistrement en ligne ; voir [l’API actuelle](docs/backend-api.md).
-La production `main` conserve son déploiement précédent tant que `dev` n’y est pas fusionnée.
+Décision complémentaire de Noé : toute la persistance métier est onchain, y compris
+les pseudos, sessions, paramètres de partie et replays. PostgreSQL et le worker
+séparé sont supprimés. Voir [l’API actuelle](docs/backend-api.md).
 
 Décisions validées par Noé :
 
@@ -277,7 +276,7 @@ Décisions restantes :
 - matériel, cadrage et distance de jeu pour la démo ;
 - règles de score, collisions, vies et durée des parties ;
 - prix des skins et règles d'attribution des pièces ;
-- hébergement PostgreSQL, configuration du relayer et rétention des replays ;
+- suivi du solde relayer, des quotas et de la disponibilité du RPC ;
 - emplacement et format de stockage des fantômes ;
 - confirmation de MediaPipe sur le matériel de la démo ;
 - répartition nominative, temps disponible et horaires de l'événement.
