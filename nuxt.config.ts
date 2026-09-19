@@ -8,6 +8,8 @@ export default defineNuxtConfig({
     monadRpcUrl: '',
     monadContractAddress: '',
     relayerPrivateKey: '',
+    monadMovesAddress: '',
+    movesRelayerPrivateKey: '',
   },
   nitro: {
     vercel: {

@@ -11,6 +11,10 @@ sur Monad. Le rejeu serveur et le top 25 sont implémentés. `MonadSurf` est
 [déployé et vérifié sur Monad testnet](contracts/README.md#contrat-déployé).
 Aucune base de données externe ni aucun worker séparé n’est nécessaire.
 
+La branche `chain` ajoute un [journal de mouvements temps réel](docs/movements-api.md)
+avec un contrat et un relayer distincts. L'API est prête à raccorder ; le front
+reste inchangé et ce contrat supplémentaire n'est pas encore déployé.
+
 Le déploiement automatique sur `main` est opérationnel et a été validé le
 19 septembre 2026.
 

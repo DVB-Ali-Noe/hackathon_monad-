@@ -55,7 +55,7 @@ export function chainWriter(config: ChainConfig) {
     const relayer = await chain.client.readContract({ address: chain.address, abi: monadSurfAbi, functionName: 'relayer' })
     if (relayer.toLowerCase() !== account.address.toLowerCase()) throw new Error('WRONG_RELAYER')
   }
-  async function write(data: Hex, applied: () => Promise<boolean>) {
+  async function write(data: Hex, applied: () => Promise<boolean>, options: { confirmations?: number; maxCost?: bigint } = {}) {
     await check()
     const deadline = Date.now() + 35000
     let signed: { raw: Hex; hash: Hex; nonce: number } | undefined
@@ -74,7 +74,7 @@ export function chainWriter(config: ChainConfig) {
         if (!await chain.client.readContract({ address: chain.address, abi: monadSurfAbi, functionName: 'writeAvailable' })) throw new Error('CHAIN_WRITE_LIMIT')
         try {
           const request = await wallet.prepareTransactionRequest({ to: chain.address, data, nonce: latest })
-          if (request.gas * (request.maxFeePerGas ?? request.gasPrice ?? BigInt(0)) > BigInt('1000000000000000000')) throw new Error('FEE_LIMIT')
+          if (request.gas * (request.maxFeePerGas ?? request.gasPrice ?? BigInt(0)) > (options.maxCost ?? BigInt('1000000000000000000'))) throw new Error('FEE_LIMIT')
           const raw = await wallet.signTransaction(request)
           signed = { raw, hash: keccak256(raw), nonce: latest }
         } catch {
@@ -88,7 +88,7 @@ export function chainWriter(config: ChainConfig) {
       // la consommation du précédent et une nouvelle lecture de l'état onchain.
       try { await wallet.sendRawTransaction({ serializedTransaction: signed.raw }) } catch {}
       try {
-        await chain.client.waitForTransactionReceipt({ hash: signed.hash, confirmations: 2, pollingInterval: 500, timeout: 3000 })
+        await chain.client.waitForTransactionReceipt({ hash: signed.hash, confirmations: options.confirmations ?? 2, pollingInterval: options.confirmations === 1 ? 100 : 500, timeout: 3000 })
       } catch {}
       if (await applied()) return
     }

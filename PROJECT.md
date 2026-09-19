@@ -136,8 +136,11 @@ conséquence si le temps manque.
 | Lecture du classement et rejeu des fantômes | Stockage des fantômes proposé, à préciser |
 
 Une transaction à la fin de la partie enregistre le résultat et crédite les pièces.
-L'achat d'un skin en constitue une autre. Les mouvements individuels ne déclenchent
-aucune transaction.
+L'achat d'un skin en constitue une autre. Noé a demandé sur la branche `chain`
+une transaction par changement de commande, en parallèle du jeu local. Le contrat
+et l'[API temps réel](docs/movements-api.md) sont implémentés ; leur raccordement
+au front et le déploiement du contrat des mouvements restent à effectuer.
+La simulation n'attend aucune transaction.
 
 Monad testnet conserve les résultats et l'état des joueurs. La validation par rejeu
 est réalisée côté serveur et ne dépend pas de la blockchain.
@@ -192,7 +195,7 @@ les pièces.
 | Parcours | génération pseudo-aléatoire à graine conservée, indépendante de Monad |
 | API | routes serveur Nuxt, relayer côté serveur |
 | Réseau | Monad testnet, chain ID 10143 |
-| Contrat | contrat unique, sans proxy ni token |
+| Contrats | `MonadSurf` pour les données de jeu ; `MonadMoves` optionnel pour les mouvements, sans proxy ni token |
 
 ## 10. Périmètre du MVP
 

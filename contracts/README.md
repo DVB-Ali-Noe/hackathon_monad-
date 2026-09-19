@@ -5,6 +5,11 @@ révocation des sessions, paramètres des parties, résultats, pièces et top 25
 Les commandes des replays sont conservées dans les événements. Le serveur rejoue
 la simulation avant d’écrire ; le cookie secret et la vidéo restent hors chaîne.
 
+`MonadMoves`, ajouté sur `chain`, enregistre séparément les changements de commande
+avec séquence, tick et transaction. Il référence le `MonadSurf` existant et impose
+un relayer différent. Il n'est pas encore déployé : voir
+[l'API et sa configuration](../docs/movements-api.md).
+
 ## Contrat déployé
 
 Version sans base externe déployée le 19 septembre 2026 sur Monad testnet `10143` :
@@ -37,7 +42,7 @@ forge test --root contracts --use "$PWD/contracts/.tools/solc-0.8.24" \
   --offline --network monad --hardfork monad:MonadNine -vv
 ```
 
-32 tests passent sous Foundry 1.8.3, dont trois tests génératifs de 256 cas.
+43 tests passent sous Foundry 1.8.3, dont quatre tests génératifs de 256 cas.
 Ils couvrent profils et pseudos, expiration et révocation, autorisations,
 paramètres et replays, quotas partagés, agrégats, doubles crédits et top 25.
 Les tests de classement vérifient capacité, tri, égalités, évictions, absence de

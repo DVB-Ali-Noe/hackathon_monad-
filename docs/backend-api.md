@@ -6,6 +6,10 @@ pièces, records, top 25 et replays. Aucun PostgreSQL, indexeur ou worker sépar
 n’est nécessaire. Le navigateur simule le jeu ; les routes Nuxt rejouent les
 commandes avant de signer les écritures. Aucune vidéo n’est transmise.
 
+La branche `chain` ajoute des [routes de mouvements temps réel](movements-api.md)
+optionnelles, isolées dans `MonadMoves` avec un autre relayer. Les routes de
+sessions et résultats décrites ici fonctionnent sans cette configuration.
+
 ## Configuration
 
 Renseigner les quatre variables privées de [`.env.example`](../.env.example) :
