@@ -15,6 +15,7 @@
     "test:camera": "node --test app/tests/camera.test.mjs app/tests/movement.test.mjs app/tests/worker.test.mjs",
     "test": "node --test app/tests/*.test.mjs shared/game/*.test.mjs tests/*.test.mjs",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "deploy:monad": "node --env-file-if-exists=.env scripts/deploy-monad.mjs",
     "relay": "node --env-file-if-exists=.env scripts/relay.mjs",
     "test:integration": "node --test tests/integration/*.test.mjs"
   },

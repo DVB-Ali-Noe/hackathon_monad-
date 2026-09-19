@@ -6,8 +6,9 @@ Monad testnet. Le MVP prévoit un pseudo et un relayer serveur, un parcours alé
 skins est optionnelle, sans NFT ni token.
 
 Le runner, la caméra, le contrat et l’API sont intégrés sur `dev`. Les sessions,
-le rejeu serveur, le relayer et le top 25 sont implémentés ; le testnet nécessite
-encore le déploiement du contrat et la configuration des services.
+le rejeu serveur, le relayer et le top 25 sont implémentés. `MonadSurf` est
+[déployé et vérifié sur Monad testnet](contracts/README.md#contrat-déployé).
+PostgreSQL et le worker relayer restent à configurer pour utiliser l’API.
 
 Le déploiement automatique sur `main` est opérationnel et a été validé le
 19 septembre 2026.

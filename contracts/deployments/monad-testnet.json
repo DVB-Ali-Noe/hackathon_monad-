@@ -1,0 +1,13 @@
+{
+  "chainId": 10143,
+  "contract": "MonadSurf",
+  "address": "0x9268B8f486c6dDcc92359F3B7799c9Fc1634BcF7",
+  "relayer": "0x594CF75585509740F8ae7F148e9e0287BeE098F9",
+  "transactionHash": "0x71c72fe5f9e3f66b64082712a7c54584e9e33b63cdeadedc13c2f7e28bae4d05",
+  "blockNumber": "63898033",
+  "blockHash": "0xda472514e7d2bc6a9fe0d4cf6d43145873fd6c4fd1b70b21edef0c27d1cbac9b",
+  "gasUsed": "582981",
+  "compiler": "0.8.24+commit.e11b9ed9",
+  "sourceHash": "0x2b33b332a9c6611eb60984310d7a4958ee1dd5f9ec1470007e7c33c0cd6b1100",
+  "bytecodeHash": "0x1a598c0b1e4dfcf80cc9aa56f4f295940a12840b0c310daeb730272004f861f9"
+}
