@@ -4,7 +4,7 @@ const {
   aspectRatio, inferenceMs, frameMs, analysisFps, detectedJumps, delegate, start, stop, beginCalibration,
 } = usePoseCamera()
 
-useHead({ title: 'Calibration caméra · Monad Blitz' })
+useHead({ title: 'Calibration caméra · Subway Frauder' })
 
 const active = computed(() => phase.value !== 'idle')
 const calibrated = computed(() => calibration.value.reference !== null)
@@ -53,11 +53,10 @@ const lanes = [{ value: -1, label: 'Gauche', arrow: '←' }, { value: 0, label: 
     <div class="mx-auto max-w-6xl">
       <header class="flex items-center justify-between gap-4 border-b border-zinc-800 pb-6">
         <NuxtLink to="/" class="text-sm font-semibold tracking-wide text-violet-300 hover:text-violet-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-300">
-          <span aria-hidden="true">←</span> Monad Blitz
+          <span aria-hidden="true">←</span> Subway Frauder
         </NuxtLink>
         <nav aria-label="Navigation principale" class="flex items-center gap-1 rounded-full bg-white/5 p-1 text-sm">
           <NuxtLink to="/jeu" class="rounded-full px-5 py-2 text-zinc-300 hover:bg-white/5">Jouer</NuxtLink>
-          <NuxtLink to="/calibration" aria-current="page" class="rounded-full bg-violet-300 px-5 py-2 font-semibold text-violet-950">Calibration</NuxtLink>
         </nav>
       </header>
 

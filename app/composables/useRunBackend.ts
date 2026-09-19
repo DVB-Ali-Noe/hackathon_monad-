@@ -1,5 +1,6 @@
 import type { LeaderboardSnapshot, PreparedRun, RunStatus, SessionInfo } from '../../shared/api'
 import type { RunResult } from '../../shared/types'
+import { parseLeaderboard } from '../utils/leaderboard.ts'
 
 export function useRunBackend() {
   const playerId = ref('')
@@ -12,12 +13,38 @@ export function useRunBackend() {
   let pending: RunResult | null = null
   let generation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
+  let rankingGeneration = 0
+  let rankingRequest: Promise<void> | undefined
+  let hasPrepared = false
 
   function cancel() {
     generation++
     if (timer) clearTimeout(timer)
     timer = undefined
     saving.value = false
+  }
+
+  function refreshLeaderboard(fresh = false): Promise<void> {
+    if (!fresh && rankingRequest) return rankingRequest
+    const current = ++rankingGeneration
+    leaderboard.value = null
+    leaderboardState.value = 'loading'
+    rankingRequest = $fetch<unknown>('/api/leaderboard', { timeout: 7000, retry: 0 })
+      .then(parseLeaderboard)
+      .then((data) => {
+        if (current !== rankingGeneration) return
+        leaderboard.value = data
+        leaderboardState.value = 'ready'
+      }).catch(() => { if (current === rankingGeneration) leaderboardState.value = 'unavailable' })
+      .finally(() => { if (current === rankingGeneration) rankingRequest = undefined })
+    return rankingRequest
+  }
+
+  function updateSubmission(status: RunStatus) {
+    const newlyConfirmed = status.status === 'confirmed' && submission.value?.status !== 'confirmed'
+    submission.value = status
+    saveError.value = status.error || ''
+    if (newlyConfirmed) void refreshLeaderboard(true)
   }
 
   async function prepare(pseudo: string): Promise<PreparedRun | null> {
@@ -27,14 +54,8 @@ export function useRunBackend() {
     submission.value = null
     saveError.value = ''
     notice.value = ''
-    leaderboard.value = null
-    leaderboardState.value = 'loading'
-    const ranking = $fetch<LeaderboardSnapshot>('/api/leaderboard', { timeout: 7000, retry: 0 })
-      .then((data) => {
-        if (current !== generation) return
-        leaderboard.value = data
-        leaderboardState.value = 'ready'
-      }).catch(() => { if (current === generation) leaderboardState.value = 'unavailable' })
+    const ranking = refreshLeaderboard(hasPrepared)
+    hasPrepared = true
     let run: PreparedRun | null = null
     try {
       const session = await $fetch<SessionInfo>('/api/session', { method: 'POST', body: { pseudo }, timeout: 7000, retry: 0 })
@@ -52,8 +73,7 @@ export function useRunBackend() {
     try {
       const status = await $fetch<RunStatus>(`/api/runs/${runId}/relay`, { method: 'POST', body: {}, timeout: 25000, retry: 0 })
       if (current !== generation) return
-      submission.value = status
-      saveError.value = status.error || ''
+      updateSubmission(status)
       if (status.status === 'queued' || status.status === 'submitted') timer = setTimeout(() => { void poll(runId, current) }, 3000)
     } catch {
       if (current === generation) saveError.value = 'Le résultat est conservé par le serveur. Réessaie pour reprendre sa confirmation.'
@@ -71,8 +91,7 @@ export function useRunBackend() {
     try {
       const status = await $fetch<RunStatus>('/api/run', { method: 'POST', body: result, timeout: 20000, retry: 0 })
       if (current !== generation) return
-      submission.value = status
-      saveError.value = status.error || ''
+      updateSubmission(status)
       if (status.status === 'queued' || status.status === 'submitted') void poll(result.runId, current)
     } catch (error) {
       if (current !== generation) return
@@ -96,6 +115,6 @@ export function useRunBackend() {
     }
   }
 
-  onBeforeUnmount(cancel)
-  return { playerId, leaderboard, leaderboardState, notice, submission, saving, saveError, prepare, submit, retry, changePlayer }
+  onBeforeUnmount(() => { cancel(); rankingGeneration++; rankingRequest = undefined })
+  return { playerId, leaderboard, leaderboardState, notice, submission, saving, saveError, prepare, submit, retry, changePlayer, refreshLeaderboard }
 }

@@ -102,7 +102,13 @@ test('intégration HTTP, PostgreSQL et EVM : sessions, rejeu, reprise relayer et
   }
   await t.test('SSR sans secret, contrôle d’origine et authentification', async () => {
     const html = await (await fetch(`${origin}/jeu`)).text()
-    assert.ok(html.includes('Monad Blitz'))
+    assert.ok(html.includes('Subway Frauder'))
+    const home = await fetch(origin)
+    assert.equal(home.status, 200)
+    const homeHtml = await home.text()
+    assert.ok(homeHtml.includes('Leaderboard target'))
+    assert.ok(homeHtml.includes('lives remaining'))
+    assert.ok(!homeHtml.includes('href="/calibration"'))
     for (const secret of [privateKey, relaySecret, password]) assert.ok(!html.includes(secret))
     assert.equal((await request('/api/session', { method: 'POST', body: { pseudo: 'Test' }, headers: { origin: 'https://evil.example' } })).status, 403)
     assert.equal((await request('/api/runs', { method: 'POST', body: { requestKey: randomUUID() } })).status, 401)

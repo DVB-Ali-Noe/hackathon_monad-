@@ -20,14 +20,14 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'Monad Blitz',
+      title: 'Subway Frauder',
       htmlAttrs: {
         lang: 'fr',
       },
       meta: [
         {
           name: 'description',
-          content: 'Un runner contrôlé par tes mouvements, conçu pour Monad Blitz Paris.',
+          content: 'Subway Frauder : un runner contrôlé par tes mouvements, conçu pour Monad Blitz Paris.',
         },
       ],
     },

@@ -91,3 +91,67 @@ test('une ancienne préparation ne remplace pas le nouvel instantané', async (t
   assert.equal(await old, null)
   assert.equal(backend.leaderboard.value.blockNumber, '200')
 })
+
+test('le premier départ partage le fetch encore en cours à l’ouverture', async (t) => {
+  let resolveRanking
+  let rankings = 0
+  const backend = environment(t, async (path) => {
+    if (path === '/api/leaderboard') {
+      rankings++
+      return new Promise(resolve => { resolveRanking = resolve })
+    }
+    if (path === '/api/session') return { playerId: run.playerId, pseudo: run.pseudo }
+    return run
+  })
+  const opening = backend.refreshLeaderboard()
+  const preparation = backend.prepare('Noé')
+  resolveRanking(ranking)
+  await opening
+  assert.deepEqual(await preparation, run)
+  assert.equal(rankings, 1)
+  assert.deepEqual(backend.leaderboard.value, ranking)
+})
+
+test('la confirmation relayer recharge le classement et conserve le score exact', async (t) => {
+  let rankings = 0
+  const updated = { ...ranking, blockNumber: '102', entries: [{ playerId: run.playerId, pseudo: run.pseudo, score: '9007199254740993' }] }
+  const backend = environment(t, async (path) => {
+    if (path === '/api/leaderboard') return ++rankings === 1 ? ranking : updated
+    if (path === '/api/session') return { playerId: run.playerId, pseudo: run.pseudo }
+    if (path === '/api/runs') return run
+    if (path === '/api/run') return { runId: run.runId, status: 'queued', transactionHash: null, error: null }
+    if (path.endsWith('/relay')) return { runId: run.runId, status: 'confirmed', transactionHash: '0x123', error: null }
+    throw new Error('Route inattendue')
+  })
+  await backend.prepare('Noé')
+  await backend.submit({ ...run, score: 100, coins: 3, tickCount: 1, inputs: [{ lane: 0, action: 'none' }] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(backend.submission.value.status, 'confirmed')
+  assert.equal(rankings, 2)
+  assert.deepEqual(backend.leaderboard.value, updated)
+})
+
+test('une réponse de classement invalide devient indisponible, sans faux Best score', async (t) => {
+  const backend = environment(t, async () => '<html>Not found</html>')
+  await backend.refreshLeaderboard()
+  assert.equal(backend.leaderboard.value, null)
+  assert.equal(backend.leaderboardState.value, 'unavailable')
+})
+
+test('une ancienne confirmation ne rafraîchit pas la course suivante', async (t) => {
+  let resolveOld
+  let rankings = 0
+  const backend = environment(t, async (path) => {
+    if (path === '/api/leaderboard') { rankings++; return ranking }
+    if (path === '/api/session') return { playerId: run.playerId, pseudo: run.pseudo }
+    if (path === '/api/run') return new Promise(resolve => { resolveOld = resolve })
+    return run
+  })
+  await backend.prepare('Noé')
+  const oldSubmission = backend.submit({ ...run, score: 100 })
+  await backend.prepare('Noé')
+  resolveOld({ runId: run.runId, status: 'confirmed', transactionHash: '0x123', error: null })
+  await oldSubmission
+  assert.equal(rankings, 2)
+  assert.equal(backend.submission.value, null)
+})

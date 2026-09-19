@@ -8,7 +8,8 @@ skins est optionnelle, sans NFT ni token.
 Le runner, la caméra, le contrat et l’API sont intégrés sur `dev`. Les sessions,
 le rejeu serveur, le relayer et le top 25 sont implémentés. `MonadSurf` est
 [déployé et vérifié sur Monad testnet](contracts/README.md#contrat-déployé).
-PostgreSQL et le worker relayer restent à configurer pour utiliser l’API.
+PostgreSQL et le worker relayer fonctionnent dans l’environnement local de `dev`.
+Les services hébergés et leurs variables restent à configurer avant publication.
 
 Le déploiement automatique sur `main` est opérationnel et a été validé le
 19 septembre 2026.
@@ -36,6 +37,17 @@ Pour l’enregistrement : copier `.env.example` vers `.env`, renseigner PostgreS
 l’origine du site, le RPC, l’adresse du contrat et la clé relayer privée, puis lancer
 `pnpm db:migrate`. Démarrer `pnpm relay` dans un worker pour poursuivre les envois
 après fermeture du navigateur. Voir [l’installation et l’API](docs/backend-api.md).
+
+Pour PostgreSQL local, renseigner un mot de passe aléatoire dans
+`MONAD_POSTGRES_PASSWORD` et le même dans `NUXT_DATABASE_URL`, puis lancer
+`docker compose up -d --wait` avant la migration. Le service écoute uniquement sur
+`127.0.0.1:55432` et conserve ses données dans un volume Docker. Ne pas écraser un
+`.env` existant. L’origine configurée doit correspondre exactement à celle utilisée
+dans le navigateur.
+
+Le classement se charge à l’ouverture et au début de chaque partie, puis se
+rafraîchit après confirmation du résultat. Le panneau « Next to beat » utilise
+ces données et exclut le joueur courant ; l’écart diminue localement.
 
 ## Vérification et build
 

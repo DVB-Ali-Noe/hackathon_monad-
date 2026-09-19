@@ -25,6 +25,13 @@ La clé relayer doit être dédiée à cette file et ne pas être utilisée par 
 script ou une autre base. Le contrat possède un relayer immuable : un changement
 de clé ou de contrat exige de traiter les tâches existantes avant toute migration.
 
+Pour une base locale, [compose.yaml](../compose.yaml) fournit PostgreSQL 17 avec
+un volume persistant et un port lié à `127.0.0.1:55432`. Choisir un mot de passe
+aléatoire dans `MONAD_POSTGRES_PASSWORD` (variable Docker uniquement), le reporter
+dans `NUXT_DATABASE_URL`, puis lancer `docker compose up -d --wait` avant la
+migration. Conserver le `.env` existant lorsqu’il contient déjà le wallet.
+`docker compose stop` arrête la base en conservant les données.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm db:migrate
@@ -44,9 +51,10 @@ Le navigateur fait aussi progresser la file tant que l’écran de résultat est
 Aucune promesse serveur détachée n’est utilisée. Sans navigateur ni worker actif,
 les tâches restent conservées et attendent le prochain appel.
 
-Le déploiement du contrat, la base hébergée, son application de schéma, les variables
-Vercel et l’exécution du worker sont des étapes d’exploitation à configurer ; la
-fusion de code ne déploie pas ces services. La pipeline de `main` est conservée.
+Le [contrat testnet est déployé](../contracts/README.md#contrat-déployé). La base
+hébergée, son application de schéma, les variables Vercel et l’exécution distante du
+worker restent à configurer séparément des services locaux. La pipeline de `main`
+est conservée.
 
 ## Routes et échanges
 
@@ -143,14 +151,18 @@ une lecture groupée PostgreSQL. Les scores viennent du contrat, sous forme de
 chaînes décimales conservant toute la précision `uint64`. Un nom inconnu donne
 `null` et le front affiche un identifiant abrégé.
 
-Au début de chaque partie, le front conserve un instantané. Il exclut son propre
+À l’ouverture puis au début de chaque partie, le front charge un instantané. Il exclut son propre
 joueur, choisit le score strictement supérieur le plus proche et calcule l’écart
 avec `BigInt`. Quand une cible est atteinte, la suivante prend sa place. Aucun
 appel réseau n’est effectué par tick. Le classement complet figure sous le jeu.
-Les erreurs de chargement, classement vide et absence de cible sont distingués.
+Une erreur affiche « Leaderboard unavailable ». Un chargement réussi sans cible,
+y compris un top vide, affiche « Best score » ; le tableau indique explicitement
+quand aucun record n’a encore été enregistré.
 
 À la fin, le résultat est envoyé et le front affiche validation, attente,
 transaction envoyée ou confirmation, avec lien explorateur et reprise sur erreur.
+Une confirmation recharge le classement depuis le contrat, sans attendre la
+partie suivante. Une réponse tardive d’une ancienne partie est ignorée.
 Si le service manque au lancement, la course reste locale et l’interface l’annonce ;
 aucun faux classement ni faux statut de confirmation n’est créé.
 

@@ -1,8 +1,10 @@
-# Front jouable
+# Subway Frauder — Front jouable
 
-- `/jeu` : préparation, course, classement et suivi du résultat sur Monad.
-- `/calibration` : diagnostic conservé, accessible dans les onglets et depuis
-  l’accueil. La navigation arrête la webcam de l’écran quitté.
+- `/` et `/jeu` : même écran de préparation, course, classement et suivi du résultat sur Monad. La piste
+  est visible dès l’ouverture, avec un panneau de démarrage compact ; aucune
+  page de présentation ni redirection intermédiaire.
+- `/calibration` : diagnostic conservé à cette adresse, sans bouton dans
+  l’interface du jeu. La navigation arrête la webcam de l’écran quitté.
 
 La course n’a plus de durée maximale. Le chrono affiche le temps joué, la pause
 le fige et la perte des trois vies termine la partie. Le parcours se génère
@@ -80,12 +82,23 @@ La lecture de la vidéo n’était pas accessible dans l’environnement. Les vi
 combinent géométrie locale et textures du dépôt ci-dessus ; les assets officiels
 ne sont pas importés.
 
-La préparation crée une session et une partie serveur, puis charge le top 25.
-La cible est le joueur au score strictement supérieur le plus proche ; son écart
-diminue localement pendant la course. À la fin, le résultat est rejoué par le
-serveur, envoyé par le relayer et suivi jusqu’à confirmation. En cas d’indisponibilité
-au départ, l’interface annonce une partie locale non enregistrée.
+La préparation crée une session et une partie serveur. À la fin, le résultat est
+rejoué par le serveur, envoyé par le relayer et suivi jusqu’à confirmation. En cas
+d’indisponibilité au départ, l’interface annonce une partie locale non enregistrée.
 Le fantôme reste retiré à la demande de Noé.
+
+Le score agrandi et les vies en cœurs restent visibles pendant la course. À droite,
+« Next to beat » indique le joueur au score strictement supérieur le plus proche,
+en excluant le joueur courant. L’écart diminue en local et la cible change dès que
+son score est atteint. Sans score supérieur, « Best score » apparaît uniquement
+après un chargement réussi, y compris pour un classement vide.
+
+`useRunBackend` est la source unique du classement : `GET /api/leaderboard` à
+l’ouverture, au lancement d’une partie et après confirmation d’un résultat sur
+Monad. Aucun appel réseau ne part à chaque tick. Les scores décimaux sont vérifiés
+à réception et les écarts utilisent `BigInt`, sans perte de précision. Une erreur
+réseau ou une réponse invalide affiche « Leaderboard unavailable ».
+
 Voir [le moteur partagé](../shared/game/README.md) et [l’API](../docs/backend-api.md).
 
 ## Essai réel restant
