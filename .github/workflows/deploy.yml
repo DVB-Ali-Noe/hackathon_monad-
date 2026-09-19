@@ -52,6 +52,28 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Verify Vercel access
+        run: |
+          node --input-type=module <<'NODE'
+          const orgId = encodeURIComponent(process.env.VERCEL_ORG_ID);
+          const projectId = encodeURIComponent(process.env.VERCEL_PROJECT_ID);
+          const endpoints = [
+            ['team', `https://api.vercel.com/teams/${orgId}`],
+            ['project', `https://api.vercel.com/v9/projects/${projectId}?teamId=${orgId}`],
+          ];
+          for (const [resource, url] of endpoints) {
+            const response = await fetch(url, {
+              headers: { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` },
+              signal: AbortSignal.timeout(15000),
+            });
+            console.log(`Vercel ${resource} access: HTTP ${response.status}`);
+            if (!response.ok) {
+              console.error(`::error::VERCEL_TOKEN cannot access the configured ${resource}. Check its scope and the Vercel IDs.`);
+              process.exitCode = 1;
+            }
+          }
+          NODE
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
