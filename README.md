@@ -30,11 +30,14 @@ Le workflow [Deploy production](.github/workflows/deploy.yml) déploie le site s
 Vercel à chaque push ou fusion vers `main`. Il peut aussi être lancé depuis
 **Actions → Deploy production → Run workflow**, en sélectionnant `main`.
 
-Il installe les dépendances avec pnpm, vérifie TypeScript, récupère la configuration
-de production Vercel, construit l'application et déploie le résultat avec
-`--prebuilt`. Un échec d'installation, de vérification ou de build bloque le
-déploiement. Les déploiements en cours ne sont pas interrompus par les nouveaux
-pushs.
+Il installe les dépendances avec pnpm, vérifie TypeScript, puis envoie le code à
+Vercel avec `vercel deploy --prod --yes`. Vercel construit l'application avec pnpm
+et ses variables de production avant de la publier. Un échec d'installation, de
+vérification ou de build bloque la mise en production. Les déploiements en cours
+ne sont pas interrompus par les nouveaux pushs.
+
+Le build distant permet d'utiliser un token limité au projet : `vercel pull`
+exige également un accès à l'équipe avec cette version du CLI.
 
 ### Configuration initiale
 
