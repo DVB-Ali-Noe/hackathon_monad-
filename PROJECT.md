@@ -158,7 +158,7 @@ flowchart LR
 | Styles | Tailwind CSS 4, déjà en place |
 | Dépendances | pnpm uniquement |
 | Environnement | Node.js 24 |
-| Hébergement visé | Vercel, relié au dépôt GitHub |
+| Hébergement | Projet Vercel existant ; workflow GitHub Actions préparé pour les déploiements |
 | Reconnaissance corporelle | MediaPipe proposé, à valider |
 | Rendu du jeu | À choisir selon la direction visuelle et le temps disponible |
 | API de validation | Routes serveur Nuxt proposées, à implémenter |
@@ -203,9 +203,11 @@ La démo doit montrer cette boucle complète, avec un retour clair à chaque ét
 
 ## 14. État actuel et décisions restantes
 
-Le dépôt contient le squelette Nuxt + Tailwind, une page d'accueil, la configuration TypeScript et pnpm, ainsi que la configuration du runtime Vercel. Le contrôle TypeScript et la génération du build Vercel ont été vérifiés localement.
+Le dépôt contient le squelette Nuxt + Tailwind, une page d'accueil, la configuration TypeScript et pnpm, ainsi que la configuration du runtime Vercel. Le contrôle TypeScript et la génération du build Vercel ont été vérifiés localement. Un workflow GitHub Actions a été préparé pour vérifier et déployer les pushs sur `main`.
 
-Le jeu, la caméra, le wallet, les contrats et la boutique ne sont pas encore implémentés. La connexion effective du dépôt à Vercel et le déploiement automatique restent à vérifier dans les services concernés.
+Le projet Vercel `hackathon-monad-subway-surfer` est relié au dépôt GitHub sur `main` et le squelette est accessible sur [le site de production](https://hackathon-monad-brown.vercel.app). L'activation du nouveau workflow nécessite ses secrets GitHub Actions et sa publication sur `main`.
+
+Le jeu, la caméra, le wallet, les contrats et la boutique ne sont pas encore implémentés.
 
 Décisions à prendre :
 

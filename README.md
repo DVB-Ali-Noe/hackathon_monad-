@@ -26,13 +26,41 @@ pnpm preview
 
 ## Vercel
 
-Importer le dépôt GitHub dans Vercel avec le preset **Nuxt**, le dossier racine
-`./` et les paramètres de build automatiques. Node.js 24 est défini dans
-`package.json`. Le fichier `pnpm-lock.yaml` permet à Vercel de détecter pnpm.
+Le workflow [Deploy production](.github/workflows/deploy.yml) déploie le site sur
+Vercel à chaque push ou fusion vers `main`. Il peut aussi être lancé depuis
+**Actions → Deploy production → Run workflow**, en sélectionnant `main`.
 
-Dans **Settings → Environments → Production → Branch Tracking**, sélectionner
-`main`. Chaque push ou fusion vers `main` déclenchera alors un déploiement de
-production via l'intégration GitHub de Vercel.
+Il installe les dépendances avec pnpm, vérifie TypeScript, récupère la configuration
+de production Vercel, construit l'application et déploie le résultat avec
+`--prebuilt`. Un échec d'installation, de vérification ou de build bloque le
+déploiement. Les déploiements en cours ne sont pas interrompus par les nouveaux
+pushs.
 
-Les variables d'environnement se configurent dans Vercel. Les fichiers `.env`
-locaux sont ignorés par Git.
+### Configuration initiale
+
+Le projet Vercel existant est
+[hackathon-monad-subway-surfer](https://vercel.com/byezzaali-gmailcoms-projects/hackathon-monad-subway-surfer).
+Le site est accessible sur [hackathon-monad-brown.vercel.app](https://hackathon-monad-brown.vercel.app).
+
+1. Réutiliser ce projet avec le preset **Nuxt**, le dossier racine `./` et Node.js
+   24. Le fichier `vercel.json` définit le framework.
+2. Renseigner les secrets du dépôt GitHub dans **Settings → Secrets and variables
+   → Actions → New repository secret** :
+
+   | Secret | Valeur |
+   | --- | --- |
+   | `VERCEL_TOKEN` | Un token Vercel autorisé à déployer ce projet |
+   | `VERCEL_ORG_ID` | L'identifiant de l'équipe Vercel propriétaire du projet |
+   | `VERCEL_PROJECT_ID` | L'identifiant du projet Vercel |
+
+   Les deux identifiants se trouvent dans `.vercel/project.json` après la liaison
+   locale au projet. Ce fichier est ignoré par Git. Ne pas placer le token dans
+   le code ou dans un document partagé.
+3. Publier le workflow et les fichiers de l'application sur `main`, puis vérifier
+   son exécution dans l'onglet **Actions** de GitHub.
+
+Les déploiements Git natifs de Vercel sont désactivés dans `vercel.json` pour que
+GitHub Actions contrôle la mise en production après les vérifications.
+
+Les variables d'environnement de l'application se configurent dans Vercel. Les
+fichiers `.env` locaux sont ignorés par Git.
