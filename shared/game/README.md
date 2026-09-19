@@ -71,19 +71,18 @@ de simulation, indépendamment du rendu.
 `replayRun(config, inputs)` recalcule un état final ; il rejette les commandes
 invalides, les versions incompatibles et les entrées après la fin d’une partie.
 
-Le serveur doit encore vérifier la session, le `runId`, les paramètres attendus,
-le nombre de ticks, la fin de partie et le score/les pièces annoncés, et empêcher
-un double crédit. Ce module ne remplace pas ces contrôles.
+Le serveur utilise ce moteur pour vérifier propriétaire, identifiant, graine,
+version, durée, état terminal, score et pièces. Il n’accepte que 30 minutes de
+simulation et 4 Mio par enregistrement, même si le jeu local est sans limite.
+Les pauses sont permises ; les ticks ne peuvent dépasser le temps réellement écoulé.
+Voir [l’API et ses limites](../../docs/backend-api.md).
 
-Le front produit pour l’instant des identifiants `local-…` et des résultats locaux,
-sans transaction ni appel serveur. Ces identifiants ne constituent pas des sessions
-serveur autorisées. Les commandes restent dans le résultat de la partie pour
-permettre son rejeu ; seul le pseudo est mémorisé dans le navigateur. Le fantôme
-local a été retiré à la demande de Noé. Les types d’échange ne changent pas.
+Le front reçoit désormais la graine et l’identifiant du serveur avant le départ.
+En cas d’indisponibilité, il annonce une partie locale avec identifiant `local-…`,
+qui ne sera pas soumise au relayer. Le fantôme reste retiré à la demande de Noé.
 
 Les anciennes versions sont incompatibles avec les nouvelles collisions et
-tolérances de saut. Le serveur devra accepter explicitement la version 5 ; il n’est
-pas modifié dans ce lot frontend.
+tolérances de saut. Le serveur devra accepter explicitement la version 5 ; elle est celle acceptée par l’API intégrée.
 
 Les pauses suspendent les ticks du joueur et le mouvement des trains. Elles ne sont
 pas ajoutées aux commandes enregistrées. Une interruption du rendu supérieure à

@@ -1,19 +1,18 @@
 # Contrat d'interface entre les deux développeurs
 
-Le [document produit](../PROJECT.md) fixe les décisions validées. Cette spécification
-propose le format à partager entre le moteur de jeu, le serveur et le fantôme ; les
-types exacts restent à figer avant l'intégration.
+Le [document produit](../PROJECT.md) fixe les décisions validées. Le moteur et
+le serveur utilisent les types ci-dessous. Les échanges HTTP et les limites
+effectives sont décrits dans [backend-api.md](backend-api.md).
 
 ## 1. Répartition
 
-Le développeur A produit un `RunResult` à la fin de chaque partie et consomme un
-`Ghost` au lancement. Le développeur B valide un `RunResult` et fournit un `Ghost`.
-Les deux côtés partagent la simulation, les règles du générateur et leur version.
+Le front produit un `RunResult` à la fin de chaque partie. Le serveur le valide
+avec le même moteur et le transmet au relayer. Le type `Ghost` reste disponible
+pour une évolution future ; le fantôme a été retiré du jeu à la demande de Noé.
 
-## 2. Types partagés proposés
+## 2. Types partagés
 
-À placer dans un fichier partagé, par exemple `shared/types.ts`, lors de
-l'implémentation :
+Implémentés dans [shared/types.ts](../shared/types.ts) :
 
 ```ts
 export type GameInput = {
@@ -70,9 +69,9 @@ Le format doit conserver toutes les commandes nécessaires au rejeu exact.
 La simulation avance par pas fixes, indépendants du taux de rafraîchissement du
 rendu. Le rendu interpole entre deux pas ; il ne fait pas avancer la simulation.
 
-Le principe est validé. La fréquence reste à choisir après les essais de commandes
-corporelles : les 5 ticks par seconde de la proposition initiale ne sont pas retenus
-comme contrainte.
+La fréquence actuelle est de 60 ticks par seconde. Les règles précises sont dans
+[la documentation du moteur](../shared/game/README.md) ; toute évolution de ces
+règles nécessite une nouvelle version de simulation.
 
 Contraintes du moteur :
 

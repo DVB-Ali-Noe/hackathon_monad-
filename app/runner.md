@@ -1,6 +1,6 @@
 # Front jouable
 
-- `/jeu` : préparation, course et résultat local.
+- `/jeu` : préparation, course, classement et suivi du résultat sur Monad.
 - `/calibration` : diagnostic conservé, accessible dans les onglets et depuis
   l’accueil. La navigation arrête la webcam de l’écran quitté.
 
@@ -80,16 +80,13 @@ La lecture de la vidéo n’était pas accessible dans l’environnement. Les vi
 combinent géométrie locale et textures du dépôt ci-dessus ; les assets officiels
 ne sont pas importés.
 
-Les résultats restent locaux et les commandes restent disponibles pour le rejeu.
-Le fantôme a été retiré à la demande de Noé ; seul le pseudo est mémorisé.
-Il n’y a ni classement inventé ni envoi serveur.
-Les règles et l’API de rejeu sont dans [shared/game/README.md](../shared/game/README.md).
-
-Suite souhaitée par Noé : enregistrer les 25 meilleurs scores dans un smart
-contract et afficher à droite le nom du joueur à rattraper, accompagné de
-l’écart entre son score et le score courant. Cet écart diminue pendant la course ;
-le score enregistré reste fixe. Ce classement est différé et nécessite le
-raccordement au backend/contrat, hors de ce lot frontend.
+La préparation crée une session et une partie serveur, puis charge le top 25.
+La cible est le joueur au score strictement supérieur le plus proche ; son écart
+diminue localement pendant la course. À la fin, le résultat est rejoué par le
+serveur, envoyé par le relayer et suivi jusqu’à confirmation. En cas d’indisponibilité
+au départ, l’interface annonce une partie locale non enregistrée.
+Le fantôme reste retiré à la demande de Noé.
+Voir [le moteur partagé](../shared/game/README.md) et [l’API](../docs/backend-api.md).
 
 ## Essai réel restant
 
@@ -124,5 +121,4 @@ Vérifications automatiques : `pnpm test`, `pnpm typecheck`, `pnpm build`.
 Les tests couvrent la simulation des trains, le raccord rampe/toit, le cadrage
 mathématique des deux vues, le plein écran simulé et la taille bornée des objets du décor. Ils ne
 remplacent pas un essai visuel WebGL.
-Le sandbox bloque le lancement du navigateur et l’écoute sur le port 3000 ; les
-essais visuels WebGL et webcam restent à effectuer sur la machine de démonstration.
+Les essais webcam réels restent à effectuer sur la machine de démonstration.

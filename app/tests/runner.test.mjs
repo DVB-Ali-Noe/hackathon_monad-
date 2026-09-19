@@ -15,7 +15,7 @@ registerHooks({
 })
 const { useRunner } = await import('../composables/useRunner.ts')
 
-function environment(t) {
+function environment(t, prepareRun) {
   let now = 0
   let cleanup
   const events = new Map()
@@ -38,7 +38,7 @@ function environment(t) {
   }
   const descriptors = Object.fromEntries(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
-  const runner = useRunner()
+  const runner = useRunner(prepareRun)
   runner.rendererReady.value = true
   t.after(() => {
     cleanup()
@@ -77,6 +77,28 @@ test('le clavier démarre après le compte à rebours, une pause ne produit aucu
   assert.equal(env.runner.state.value.tick, tick)
   env.advance(100)
   assert.ok(env.runner.state.value.tick > tick)
+})
+
+test('le runner utilise la graine et l’identité de partie fournies par le serveur', async (t) => {
+  const prepared = { runId: `0x${'12'.repeat(32)}`, playerId: `0x${'34'.repeat(32)}`, pseudo: 'Serveur', seed: 'server-seed', simulationVersion: 'runner-5-oncoming-60hz', expiresAt: new Date().toISOString() }
+  const env = environment(t, async () => prepared)
+  await env.runner.start('keyboard')
+  env.advance(120000)
+  assert.equal(env.runner.result.value.runId, prepared.runId)
+  assert.equal(env.runner.result.value.pseudo, prepared.pseudo)
+  assert.equal(env.runner.result.value.seed, prepared.seed)
+})
+
+test('quitter pendant la création serveur empêche un démarrage tardif', async (t) => {
+  let resolve
+  const env = environment(t, () => new Promise(done => { resolve = done }))
+  const start = env.runner.start('keyboard')
+  assert.equal(env.runner.phase.value, 'connecting')
+  env.runner.quit()
+  resolve(null)
+  await start
+  assert.equal(env.runner.phase.value, 'setup')
+  assert.equal(env.runner.state.value.tick, 0)
 })
 
 test('la course caméra se calibre sans second clic et se suspend en cas de perte', async (t) => {

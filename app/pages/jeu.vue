@@ -1,9 +1,20 @@
 <script setup lang="ts">
+import { nearestRival } from '#shared/leaderboard.ts'
+
+const backend = useRunBackend()
+const { playerId, leaderboard, leaderboardState, notice, submission, saving, saveError } = backend
 const {
   camera, phase, mode, firstPerson, pseudo, state, result, countdown, pauseReason,
   rendererReady, rendererError, storageNotice, elapsedTime, cameraTracked, touch,
   advance, start, resume, pause, quit, onRendererError,
-} = useRunner()
+} = useRunner(backend.prepare)
+const rival = computed(() => nearestRival(leaderboard.value?.entries || [], state.value.score, playerId.value))
+const savedLabel = computed(() => saving.value ? 'Validation de la partie…'
+  : ({ ready: 'Partie créée', queued: 'Résultat validé · envoi en attente', submitted: 'Transaction envoyée · confirmation en cours', confirmed: 'Résultat confirmé sur Monad', failed: 'Enregistrement non confirmé' }[submission.value?.status || 'ready']))
+watch(result, (value) => { if (value) void backend.submit(value) })
+async function changePlayer() {
+  if (await backend.changePlayer()) { pseudo.value = ''; quit() }
+}
 const {
   video, phase: cameraPhase, error: cameraError, calibration, calibrationCountdown,
   calibrating, visible, movement,
@@ -69,6 +80,15 @@ useHead({ title: 'Jouer · Monad Blitz' })
               </div>
             </div>
 
+            <div v-if="playing && phase !== 'connecting'" class="pointer-events-none absolute left-4 top-28 max-w-[55%] rounded-xl bg-[#102e46]/90 px-4 py-3 text-left sm:left-6 sm:max-w-xs">
+              <template v-if="rival">
+                <p class="truncate text-xs text-sky-200">Prochaine cible · {{ rival.pseudo || `${rival.playerId.slice(0, 8)}…` }}</p>
+                <p class="mt-1 text-2xl font-bold tabular-nums text-amber-200">{{ BigInt(rival.gap).toLocaleString('fr-FR') }} <span class="text-xs font-normal">points à rattraper</span></p>
+              </template>
+              <p v-else class="text-xs text-sky-200">{{ leaderboardState === 'unavailable' ? 'Classement indisponible' : leaderboard?.entries.length ? 'Aucun score supérieur dans ce top 25' : 'Aucun score enregistré' }}</p>
+              <p v-if="notice" class="mt-2 text-[11px] text-amber-200">Mode local · score non enregistré</p>
+            </div>
+
             <div v-if="phase === 'setup' && !rendererError" class="runner-setup absolute inset-x-5 bottom-24 text-center sm:bottom-28">
               <p class="text-sm text-sky-200">Trois rails. Une ville à traverser.</p>
               <h1 class="mx-auto mt-3 max-w-xl text-4xl font-black leading-[1.05] tracking-tight sm:text-6xl">Dans les rails.<br>À ta hauteur.</h1>
@@ -82,8 +102,9 @@ useHead({ title: 'Jouer · Monad Blitz' })
               </div>
             </div>
 
-            <div v-if="phase === 'preparing' || phase === 'countdown'" class="absolute inset-0 flex flex-col items-center justify-center bg-[#12354d]/65 px-6 text-center backdrop-blur-[3px]" role="status">
-              <template v-if="phase === 'countdown'">
+            <div v-if="phase === 'connecting' || phase === 'preparing' || phase === 'countdown'" class="absolute inset-0 flex flex-col items-center justify-center bg-[#12354d]/65 px-6 text-center backdrop-blur-[3px]" role="status">
+              <p v-if="phase === 'connecting'" class="text-lg font-semibold">Préparation de ta partie et du classement…</p>
+              <template v-else-if="phase === 'countdown'">
                 <p class="text-lg text-sky-200">À toi de jouer</p><p class="my-4 text-9xl font-black tabular-nums">{{ countdown }}</p><p class="text-sm text-zinc-300">Gauche, droite, saute, baisse-toi.</p>
               </template>
               <template v-else>
@@ -107,12 +128,16 @@ useHead({ title: 'Jouer · Monad Blitz' })
             <div v-if="phase === 'finished' && result" class="absolute inset-0 flex flex-col items-center justify-center bg-[#12354d]/90 px-6 text-center backdrop-blur-sm" role="status">
               <p class="text-sm text-sky-200">{{ result.pseudo }} · Course terminée</p>
               <h2 class="mt-4 text-6xl font-black tabular-nums tracking-tight sm:text-8xl">{{ result.score.toLocaleString('fr-FR') }}</h2>
-              <p class="mt-2 text-sm text-zinc-400">points · résultat local</p>
+              <p class="mt-2 text-sm text-zinc-300">points · {{ submission || saving ? savedLabel : 'résultat local' }}</p>
+              <p v-if="notice" class="mt-3 max-w-sm text-xs text-amber-200">{{ notice }}</p>
+              <p v-if="saveError" class="mt-3 max-w-sm text-sm text-amber-200">{{ saveError }}</p>
+              <button v-if="saveError && !result.runId.startsWith('local-')" :disabled="saving" class="mt-3 text-sm underline" @click="backend.retry">Réessayer l’enregistrement</button>
+              <a v-if="submission?.transactionHash" :href="`https://testnet.monadexplorer.com/tx/${submission.transactionHash}`" target="_blank" rel="noopener noreferrer" class="mt-3 text-xs text-sky-200 underline">Voir la transaction</a>
               <div class="mt-7 flex gap-8 text-sm"><span><strong class="text-xl text-amber-200">{{ result.coins }}</strong> pièces</span><span><strong class="text-xl">{{ Math.floor(state.distance / 1000) }}</strong> mètres</span></div>
               <div class="mt-8 flex flex-wrap justify-center gap-3">
                 <button class="runner-button" @click="start(mode)">Nouvelle piste</button>
               </div>
-              <button class="mt-5 text-sm text-zinc-400 underline underline-offset-4" @click="quit">Changer de joueur</button>
+              <button class="mt-5 text-sm text-zinc-400 underline underline-offset-4" @click="changePlayer">Changer de joueur</button>
             </div>
 
             <div v-if="rendererError" class="absolute inset-0 flex items-center justify-center bg-[#12354d]/95 p-8 text-center"><p role="alert" class="max-w-md leading-relaxed text-rose-200">{{ rendererError }}</p></div>
@@ -144,6 +169,15 @@ useHead({ title: 'Jouer · Monad Blitz' })
             </div>
           </div>
 
+          <section v-if="leaderboardState === 'ready' && leaderboard" class="mt-4 rounded-2xl border border-white/10 bg-[#102e46] p-4 sm:p-6" aria-labelledby="leaderboard-title">
+            <h2 id="leaderboard-title" class="font-semibold">Top 25 historique <span class="text-xs font-normal text-sky-200">· chargé au début de la partie</span></h2>
+            <p v-if="!leaderboard.entries.length" class="mt-3 text-sm text-zinc-300">Le premier record reste à établir.</p>
+            <ol v-else class="mt-3 grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
+              <li v-for="(entry, index) in leaderboard.entries" :key="entry.playerId" class="flex items-center gap-3 border-t border-white/5 py-2 text-sm">
+                <span class="w-6 text-zinc-400">{{ index + 1 }}</span><span class="min-w-0 flex-1 truncate">{{ entry.pseudo || `${entry.playerId.slice(0, 8)}…` }}</span><strong class="tabular-nums text-amber-200">{{ BigInt(entry.score).toLocaleString('fr-FR') }}</strong>
+              </li>
+            </ol>
+          </section>
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
             <p class="text-xs text-zinc-500">{{ mode === 'keyboard' && playing ? '← → : se déplacer · relâcher : centre · espace : sauter · ↓ : s’accroupir' : 'La course se met en pause si la caméra perd ta position.' }}</p>
             <button v-if="phase === 'running' || phase === 'countdown'" class="rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5" @click="pause()">Pause <span class="ml-2 text-xs text-zinc-500">Échap</span></button>

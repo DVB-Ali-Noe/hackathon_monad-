@@ -251,10 +251,12 @@ remplir le classement. Les horaires exacts restent à confirmer.
 
 ## 14. État et décisions
 
-État vérifié le 19 septembre 2026. Le dépôt contient le squelette Nuxt et Tailwind,
-la configuration TypeScript et pnpm, le runtime Vercel Node.js 24 et la pipeline
-GitHub Actions publiée sur `main`. Le jeu, la caméra, le contrat et les routes
-serveur ne sont pas implémentés.
+État de l’intégration sur `dev` : runner three.js en FPV, caméra/calibration,
+moteur partagé 60 Hz, contrat avec top 25, sessions, rejeu serveur, relayer et
+classement raccordés. Le fantôme a été retiré du front à la demande de Noé.
+Le contrat testnet, PostgreSQL hébergé et le worker doivent être configurés avant
+l’enregistrement en ligne ; voir [l’API actuelle](docs/backend-api.md).
+La production `main` conserve son déploiement précédent tant que `dev` n’y est pas fusionnée.
 
 Décisions validées par Noé :
 
@@ -275,8 +277,7 @@ Décisions restantes :
 - matériel, cadrage et distance de jeu pour la démo ;
 - règles de score, collisions, vies et durée des parties ;
 - prix des skins et règles d'attribution des pièces ;
-- fréquence de simulation, format exact des commandes et transport des replays ;
-- mécanisme de session, identité joueur et protection contre les doubles crédits ;
+- hébergement PostgreSQL, configuration du relayer et rétention des replays ;
 - emplacement et format de stockage des fantômes ;
 - confirmation de MediaPipe sur le matériel de la démo ;
 - répartition nominative, temps disponible et horaires de l'événement.

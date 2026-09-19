@@ -8,14 +8,14 @@ Le [README racine](../README.md) décrit le développement et le déploiement.
 | Document | Contenu |
 | --- | --- |
 | [interface.md](interface.md) | Commandes, graine aléatoire, simulation partagée et rejeu |
-| [backend-monad.md](backend-monad.md) | Contrat proposé, sessions, routes serveur et relayer |
+| [backend-monad.md](backend-monad.md) | Contrat de résultats et top 25 |
+| [backend-api.md](backend-api.md) | API implémentée, configuration PostgreSQL/relayer et tests |
 | [monad-reference.md](monad-reference.md) | Références réseau Monad à consulter lors de l'implémentation |
 | [demo-et-pitch.md](demo-et-pitch.md) | Organisation proposée de la démo et du pitch |
 
-Lire `interface.md` en premier pour aligner les deux parties. Le pas de temps fixe
-est validé ; sa fréquence, les types exacts et certains détails du backend restent
-à définir. Les documents décrivent le travail à réaliser, pas des fonctionnalités
-existantes.
+Le moteur partagé est implémenté à 60 ticks/s, version `runner-5-oncoming-60hz`.
+Lire `backend-api.md` pour l’intégration actuelle et ses limites. Le fantôme a
+été retiré du front après les décisions initiales listées ci-dessous.
 
 ## Décisions validées le 19 septembre 2026
 

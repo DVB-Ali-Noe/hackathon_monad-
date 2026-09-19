@@ -3,6 +3,14 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-19',
   css: ['~/assets/css/main.css'],
+  runtimeConfig: {
+    databaseUrl: '',
+    siteOrigin: '',
+    monadRpcUrl: '',
+    monadContractAddress: '',
+    relayerPrivateKey: '',
+    relaySecret: '',
+  },
   nitro: {
     vercel: {
       functions: {

@@ -1,4 +1,5 @@
 import type { GameInput, RunConfig, RunResult } from '../../shared/types'
+import type { PreparedRun } from '../../shared/api'
 import { createCourse, updateCourse, createState, stepGame, SIMULATION_VERSION, TICK_RATE } from '#shared/game/engine.ts'
 import type { GameState, TrackItem } from '#shared/game/engine.ts'
 
@@ -10,9 +11,9 @@ export type RunnerFrame = {
   firstPerson: boolean
 }
 
-export function useRunner() {
+export function useRunner(prepareRun?: (pseudo: string) => Promise<PreparedRun | null>) {
   const camera = usePoseCamera()
-  const phase = ref<'setup' | 'preparing' | 'countdown' | 'running' | 'paused' | 'finished'>('setup')
+  const phase = ref<'setup' | 'connecting' | 'preparing' | 'countdown' | 'running' | 'paused' | 'finished'>('setup')
   const mode = ref<'camera' | 'keyboard'>('camera')
   const firstPerson = ref(true)
   const pseudo = ref('')
@@ -38,6 +39,7 @@ export function useRunner() {
   let lastTime: number | null = null
   let accumulator = 0
   let countdownUntil = 0
+  let startGeneration = 0
   const keys = new Set<string>()
   const touch = reactive({ lane: 0 as GameInput['lane'], action: 'none' as GameInput['action'] })
 
@@ -70,16 +72,22 @@ export function useRunner() {
   }
 
   async function start(control: typeof mode.value) {
-    if (!rendererReady.value || rendererError.value) return
+    if (!rendererReady.value || rendererError.value || phase.value === 'connecting') return
+    const generation = ++startGeneration
     clearControls()
     mode.value = control
-    config = { seed: crypto.randomUUID(), simulationVersion: SIMULATION_VERSION }
+    runPseudo = pseudo.value.trim().normalize('NFC').slice(0, 20) || 'Coureur'
+    result.value = null
+    phase.value = 'connecting'
+    const prepared = prepareRun ? await prepareRun(runPseudo) : null
+    if (generation !== startGeneration) return
+    config = { seed: prepared?.seed || crypto.randomUUID(), simulationVersion: prepared?.simulationVersion || SIMULATION_VERSION }
     course = createCourse(config)
     state.value = createState()
     previous = state.value
     inputs = []
-    runId = `local-${crypto.randomUUID()}`
-    runPseudo = pseudo.value.trim().slice(0, 20) || 'Coureur'
+    runId = prepared?.runId || `local-${crypto.randomUUID()}`
+    runPseudo = prepared?.pseudo || runPseudo
     result.value = null
     accumulator = 0
     lastTime = null
@@ -157,6 +165,7 @@ export function useRunner() {
   }
 
   function quit() {
+    startGeneration++
     camera.stop()
     clearControls()
     phase.value = 'setup'
@@ -198,6 +207,7 @@ export function useRunner() {
     document.addEventListener('visibilitychange', hidden)
   })
   onBeforeUnmount(() => {
+    startGeneration++
     window.removeEventListener('keydown', keydown)
     window.removeEventListener('keyup', keyup)
     window.removeEventListener('blur', blur)

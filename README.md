@@ -5,8 +5,9 @@ Monad testnet. Le MVP prévoit un pseudo et un relayer serveur, un parcours alé
 à graine, une validation par rejeu, un rendu three.js et un fantôme. La boutique de
 skins est optionnelle, sans NFT ni token.
 
-Le squelette Nuxt 4, Vue 3, TypeScript et Tailwind CSS 4 est en place ; le gameplay,
-la caméra et l'intégration blockchain restent à développer.
+Le runner, la caméra, le contrat et l’API sont intégrés sur `dev`. Les sessions,
+le rejeu serveur, le relayer et le top 25 sont implémentés ; le testnet nécessite
+encore le déploiement du contrat et la configuration des services.
 
 Le déploiement automatique sur `main` est opérationnel et a été validé le
 19 septembre 2026.
@@ -27,11 +28,18 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Le site est accessible sur http://localhost:3000.
+Le site est accessible sur http://localhost:3000. Sans configuration backend,
+le jeu annonce explicitement une partie locale, sans crédit sur Monad.
+
+Pour l’enregistrement : copier `.env.example` vers `.env`, renseigner PostgreSQL,
+l’origine du site, le RPC, l’adresse du contrat et la clé relayer privée, puis lancer
+`pnpm db:migrate`. Démarrer `pnpm relay` dans un worker pour poursuivre les envois
+après fermeture du navigateur. Voir [l’installation et l’API](docs/backend-api.md).
 
 ## Vérification et build
 
 ```sh
+pnpm test
 pnpm typecheck
 pnpm build
 pnpm preview
@@ -97,9 +105,11 @@ workflow utilise `VERCEL_TOKEN`. Si l'ancien message « Could not retrieve Proje
 Settings » réapparaît après une modification du workflow, vérifier qu'il utilise
 toujours le build distant et ne réintroduit pas `vercel pull` avec ce token.
 
-## Prochaine étape
+## Validation de l’intégration
 
-Préciser les commandes et paramètres de rejeu dans [l'interface](docs/interface.md),
-puis prototyper la caméra, la calibration et les commandes gauche, droite, saut et
-accroupissement. Le runner utilisera une génération aléatoire à graine, sans dépendre
-des blocs Monad. Les décisions et points ouverts figurent dans [PROJECT.md](PROJECT.md).
+Les tests Solidity se lancent avec Forge depuis `contracts/` ; voir
+[contracts/README.md](contracts/README.md). Après compilation du contrat et
+`pnpm build`, `pnpm test:integration` vérifie le circuit HTTP → PostgreSQL → Anvil.
+Docker et Anvil sont nécessaires ; les services de test sont éphémères.
+
+Les essais webcam et WebGL réels restent décrits dans [app/runner.md](app/runner.md).

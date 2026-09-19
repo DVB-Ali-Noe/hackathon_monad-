@@ -3,12 +3,13 @@
 Le contrat de résultats et son top 25 historique sont implémentés dans
 [contracts/src/MonadSurf.sol](../contracts/src/MonadSurf.sol) et testé localement.
 Il remplace l'ancienne ébauche de ce document, qui identifiait les joueurs par leur
-pseudo et ne protégeait pas contre les doubles crédits. Aucun déploiement,
-transaction réseau, serveur de session ou validateur de rejeu n'est livré ici.
+pseudo et ne protégeait pas contre les doubles crédits. Les sessions, le rejeu,
+le relayer et l’affichage sont désormais raccordés ; aucun contrat n’est déployé
+sur le testnet par cette intégration.
 
-Les décisions produit restent dans [PROJECT.md](../PROJECT.md). Le contrat d'API
-pour le prochain lot est proposé dans [backend-api.md](backend-api.md), en accord
-avec [interface.md](interface.md).
+Les décisions produit restent dans [PROJECT.md](../PROJECT.md).
+L’[API implémentée et sa configuration](backend-api.md) complètent
+[interface.md](interface.md).
 
 ## 1. Contrat livré
 
@@ -127,13 +128,10 @@ Une soumission rejetée ne modifie ni le classement ni les statistiques.
 
 ### Lecture au début de la partie et cible locale
 
-Le front devra charger une fois `getLeaderboard()` au lancement et conserver cet
-instantané jusqu'à la fin de la partie. Le futur backend devra résoudre les
-`playerId` vers leurs pseudos par une lecture groupée de sa table de joueurs.
-Le pseudo n'est jamais extrait de l'identifiant ou utilisé comme autorisation.
-Le [format d'enrichissement proposé](backend-api.md#8-top-25-et-résolution-des-pseudos)
-prévoit un pseudo nul si le nom n'est pas disponible ; afficher alors un identifiant
-abrégé. Aucun endpoint ni rendu frontend n'est implémenté dans ce lot.
+Le front charge `GET /api/leaderboard` au lancement et conserve l’instantané.
+Cette route lit `getLeaderboard()` à un bloc déterminé puis résout les pseudos
+par une requête groupée PostgreSQL. Un nom absent s’affiche comme identifiant
+abrégé. Voir [l’intégration API](backend-api.md#top-25-et-affichage-en-jeu).
 
 À partir du score courant et en excluant son propre `playerId` :
 
@@ -188,34 +186,14 @@ Avant un déploiement, reprendre ces tests avec Foundry 1.8 ou supérieur et
 [documentation officielle](https://docs.monad.xyz/guides/deploy-smart-contract/foundry).
 Aucun chiffre de gas ou délai de finalité n'est validé par ce lot.
 
-## 4. API et persistance à intégrer
+## 4. API et persistance intégrées
 
-La [proposition détaillée](backend-api.md) décrit les routes suivantes ; elles
-n'existent pas encore dans `server/` :
-
-| Méthode et route | Responsabilité future |
-| --- | --- |
-| `POST /api/session` | Créer/reconnaître un joueur par cookie opaque, associer le pseudo |
-| `POST /api/runs` | Allouer `runId`, graine et version autorisées, persister le propriétaire |
-| `POST /api/run` | Valider un `RunResult` par rejeu et programmer son enregistrement unique |
-| `GET /api/runs/:runId` | Retrouver l'état et le hash après une réponse perdue |
-
-La session sera liée à un identifiant interne ; saisir le pseudo d'un autre joueur
-ne donne aucun accès à ses parties. Cookie de production `HttpOnly`, `Secure`,
-`SameSite=Lax`, contrôle d'origine et stockage durable sont proposés.
-Durées, récupération et changement de joueur sur une borne restent ouverts.
-
-Les requêtes Vercel doivent partager un stockage avec unicité de partie, empreinte
-immuable de soumission et tâche relayer durable. Les transitions et reprises après
-crash demandent des opérations atomiques ; un cache ou verrou mémoire ne suffit pas.
-La gestion des nonces doit sérialiser les envois par clé ou les réserver de manière
-transactionnelle, avec réconciliation des transactions signées et diffusées.
-Le fournisseur de stockage et le mécanisme de file/worker restent à choisir.
-
-Les lectures on-chain de `getPlayer` et `getLeaderboard` sont publiques. Le top 25
-fournit directement sa liste de joueurs ; le futur backend doit seulement enrichir
-ces identifiants avec les noms hors chaîne. Il n'y a pas d'énumération globale de
-tous les joueurs. L'affichage et la résolution des pseudos restent à intégrer.
+Les routes de session, création de partie, rejeu, suivi et classement sont dans
+`server/api/`. PostgreSQL conserve les identités, paramètres et résultats, et
+coordonne un relayer à transaction unique en vol. Le front utilise les graines
+serveur et affiche la progression de l’enregistrement. Les types partagés,
+limites, reprises, variables serveur et tests sont décrits dans
+[backend-api.md](backend-api.md).
 
 ## 5. Paramètres du futur déploiement
 
@@ -231,10 +209,10 @@ identifiant avant toute signature. Références :
 | Cible de compilation | EVM `cancun`, fixée dans `contracts/foundry.toml` |
 | Exécution de validation réseau | Foundry ≥ 1.8, `--network monad` ; revalider la configuration avec cette version |
 | Constructeur | `relayer_` : adresse non nulle du signataire serveur |
-| RPC | `MONAD_RPC_URL`, endpoint testnet choisi, quotas à vérifier |
+| RPC | `NUXT_MONAD_RPC_URL`, endpoint testnet choisi, quotas à vérifier |
 | Signataire du déploiement | Compte local chiffré/keystore à préparer dans un lot autorisant le déploiement |
-| Signataire des résultats | `RELAYER_PRIVATE_KEY`, uniquement serveur |
-| Adresse déployée | `CONTRACT_ADDRESS`, à renseigner après déploiement |
+| Signataire des résultats | `NUXT_RELAYER_PRIVATE_KEY`, uniquement serveur |
+| Adresse déployée | `NUXT_MONAD_CONTRACT_ADDRESS`, à renseigner après déploiement |
 
 Aucun secret n'est nécessaire pour les tests. Les secrets futurs et le RPC privé
 restent hors bundle client et hors `runtimeConfig.public`. Ne pas copier de clé
@@ -245,20 +223,11 @@ Monad, vérifier le réseau et l'adresse relayer, estimer les opérations réell
 supportées, puis conserver l'ABI, les paramètres, l'adresse et le reçu de déploiement.
 Les bornes de gas et la politique de confirmation doivent venir d'essais du réseau
 cible ; un hash ou un reçu ne suffit pas à annoncer une finalité mesurée.
-La diffusion d'une transaction reste hors de ce premier lot.
+Les vérifications d’intégration utilisent une EVM locale, sans transaction testnet.
 
-## 6. Prochain lot et choix ouverts
+## 6. Exploitation et choix ouverts
 
-1. Figer avec le front l'API de `shared/game/`, la graine, la version et les bornes
-   des ticks, commandes, scores et pièces. Aucun moteur alternatif n'est créé ici.
-2. Choisir stockage durable, sessions, rétention des replays et file/coordination
-   des nonces adaptée à Vercel.
-3. Implémenter le rejeu réel, les routes et les reprises idempotentes, avec tests
-   de concurrence et de crash. Refuser toute acceptation si le moteur est indisponible.
-4. Préparer ensuite un déploiement autorisé et l'intégration du suivi des résultats.
-
-Boutique, skins et stockage des fantômes restent hors lot. Avec ce contrat sans
-proxy, ajouter des écritures de boutique demanderait un nouveau déploiement et une
-stratégie explicite de conservation des soldes. Le format et l'emplacement des
-fantômes restent ouverts ; leurs graines, versions, ticks et inputs devront être
-conservés, sans vidéo.
+Configurer PostgreSQL hébergé, le contrat testnet, la clé relayer dédiée et son
+approvisionnement, puis le worker de reprise. Mesurer le gas et la confirmation
+sur Monad ; prévoir la rétention des replays et le remplacement contrôlé des
+transactions bloquées. La boutique, les skins et les fantômes restent hors lot.
