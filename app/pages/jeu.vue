@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { LeaderboardEntry, LeaderboardSnapshot } from '#shared/api.ts'
 import { nearestRival } from '#shared/leaderboard.ts'
 
 definePageMeta({ alias: ['/'] })
@@ -11,6 +12,25 @@ const {
   advance, start, resume, pause, quit, onRendererError,
 } = useRunner(backend.prepare)
 const rival = computed(() => nearestRival(leaderboard.value?.entries || [], state.value.score, playerId.value))
+const board = shallowRef<LeaderboardSnapshot | null>(null)
+watch(leaderboard, (value) => { if (value) board.value = value }, { immediate: true })
+const isMe = (entry: LeaderboardEntry) => !!playerId.value && entry.playerId.toLowerCase() === playerId.value.toLowerCase()
+const playerName = (entry: LeaderboardEntry) => entry.pseudo || `Player ${entry.playerId.slice(0, 8)}`
+const finalRows = computed(() => {
+  const entries = board.value?.entries || []
+  const rows = entries.filter(entry => !isMe(entry)).map(entry => ({ key: entry.playerId, name: playerName(entry), score: BigInt(entry.score), me: false, note: '' }))
+  if (result.value) {
+    const run = BigInt(result.value.score)
+    const mine = entries.find(isMe)
+    const best = mine && BigInt(mine.score) > run ? BigInt(mine.score) : run
+    const status = submission.value?.status === 'confirmed' ? 'Confirmé sur Monad' : submission.value || saving.value ? 'En attente de confirmation' : 'Score local'
+    const note = best > run ? `Meilleur score · cette course : ${run.toLocaleString('fr-FR')}` : status
+    rows.splice(rows.filter(row => row.score >= best).length, 0, { key: 'me', name: result.value.pseudo, score: best, me: true, note })
+  }
+  const ranked = rows.map((row, index) => ({ ...row, rank: index + 1 }))
+  const me = ranked.find(row => row.me)
+  return !me || me.rank <= 5 ? ranked.slice(0, 5) : [...ranked.slice(0, 4), me]
+})
 const savedLabel = computed(() => saving.value ? 'Validation de la partie…'
   : ({ ready: 'Partie créée', submitted: 'Transaction envoyée · confirmation en cours', confirmed: 'Résultat confirmé sur Monad' }[submission.value?.status || 'ready']))
 onMounted(() => { void backend.refreshLeaderboard() })
@@ -22,6 +42,8 @@ const {
   video, phase: cameraPhase, error: cameraError, calibration, calibrationCountdown,
   calibrating, visible, movement,
 } = camera
+const { clip } = useHighlights(video, phase)
+const muted = useState('music-muted', () => false)
 const stage = ref<HTMLElement | null>(null)
 const { fullscreen, fullscreenError, toggleFullscreen } = useGameFullscreen(stage, () => { if (phase.value === 'running') pause() })
 const texturesLoaded = ref(true)
@@ -73,8 +95,21 @@ useHead({ title: 'Play · Subway Frauder' })
               <template #fallback><div class="flex size-full items-center justify-center text-sm text-zinc-400">Préparation de la piste…</div></template>
             </ClientOnly>
 
+            <div v-if="phase === 'setup' && !rendererError" class="absolute inset-0 overflow-hidden">
+              <img src="/menu-bg.webp" alt="" fetchpriority="high" class="size-full object-cover object-top">
+              <div class="absolute inset-0 bg-linear-to-b from-[#102e46]/60 via-transparent to-[#102e46]/90" />
+              <div class="absolute left-4 top-5 z-10 sm:left-7 sm:top-7 lg:left-1/2 lg:top-[4%] lg:-translate-x-1/2 lg:text-center">
+                <p class="runner-logo"><span>Subway</span><span class="text-[#ffcf45]">Frauder</span></p>
+                <p class="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest sm:text-xs lg:justify-center">
+                  <span class="-rotate-2 rounded-md bg-[#00a88f] px-2.5 py-1 text-white shadow-[0_3px_0_#0b2235]">Paris</span>
+                  <span class="rotate-1 rounded-md bg-[#836ef9] px-2.5 py-1 text-white shadow-[0_3px_0_#0b2235]">on Monad</span>
+                </p>
+              </div>
+              <button :disabled="!rendererReady" class="runner-press absolute bottom-[15%] left-1/2 hidden -translate-x-1/2 motion-safe:animate-pulse lg:block" @click="start('camera')">Bouge pour jouer</button>
+            </div>
+
             <div class="runner-hud pointer-events-none absolute inset-x-0 top-0 grid grid-cols-2 items-start gap-4 bg-linear-to-b from-[#12354d] to-transparent p-4 pb-12 sm:p-7 sm:pb-14" lang="en">
-              <div class="min-w-0">
+              <div class="min-w-0" :class="{ invisible: phase === 'setup' }">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200/80 sm:text-sm">Score</p>
                 <p class="mt-1 break-all text-[clamp(2.5rem,7vw,6rem)] font-black leading-none tracking-tight tabular-nums">{{ state.score.toLocaleString('en-US') }}</p>
                 <div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 sm:gap-x-8">
@@ -84,7 +119,18 @@ useHead({ title: 'Play · Subway Frauder' })
                 </div>
               </div>
               <section aria-label="Leaderboard target" class="min-w-0 justify-self-end rounded-xl border border-white/15 bg-[#102e46]/85 p-3 text-right sm:min-w-56 sm:p-5">
-                <template v-if="leaderboardState === 'ready' && leaderboard">
+                <template v-if="phase === 'setup' && board">
+                  <p class="text-[10px] font-semibold uppercase tracking-widest text-sky-200/80 sm:text-xs">Top 5 · Leaderboard</p>
+                  <ol v-if="board.entries.length" class="mt-3 grid gap-1.5 text-left text-xs sm:w-64 sm:text-sm">
+                    <li v-for="(entry, index) in board.entries.slice(0, 5)" :key="entry.playerId" class="flex items-center gap-2 rounded-md px-1.5 py-0.5" :class="{ 'bg-amber-300/15': isMe(entry) }">
+                      <span class="w-4 font-black tabular-nums" :class="index < 3 ? 'text-amber-300' : 'text-sky-200/70'">{{ index + 1 }}</span>
+                      <span class="min-w-0 flex-1 truncate font-semibold text-white">{{ playerName(entry) }}</span>
+                      <strong class="tabular-nums text-amber-200">{{ BigInt(entry.score).toLocaleString('en-US') }}</strong>
+                    </li>
+                  </ol>
+                  <p v-else lang="fr" class="mt-2 max-w-48 text-xs text-sky-100/80">Le premier record reste à établir.</p>
+                </template>
+                <template v-else-if="leaderboardState === 'ready' && leaderboard">
                   <template v-if="rival">
                     <p class="text-[10px] font-semibold uppercase tracking-widest text-sky-200/80 sm:text-xs">Next to beat</p>
                     <p class="mt-2 max-w-48 break-words text-sm font-bold text-white sm:text-xl">{{ rival.pseudo || `Player ${rival.playerId.slice(0, 8)}` }}</p>
@@ -131,19 +177,73 @@ useHead({ title: 'Play · Subway Frauder' })
               <button class="mt-5 text-sm text-zinc-400 underline underline-offset-4 hover:text-white" @click="quit">Quitter la course</button>
             </div>
 
-            <div v-if="phase === 'finished' && result" class="absolute inset-0 flex flex-col items-center justify-center bg-[#12354d]/90 px-6 text-center backdrop-blur-sm" role="status">
-              <p class="text-sm text-sky-200">{{ result.pseudo }} · Course terminée</p>
-              <h2 class="mt-4 text-6xl font-black tabular-nums tracking-tight sm:text-8xl">{{ result.score.toLocaleString('fr-FR') }}</h2>
-              <p class="mt-2 text-sm text-zinc-300">points · {{ submission || saving ? savedLabel : 'résultat local' }}</p>
-              <p v-if="notice" class="mt-3 max-w-sm text-xs text-amber-200">{{ notice }}</p>
-              <p v-if="saveError" class="mt-3 max-w-sm text-sm text-amber-200">{{ saveError }}</p>
-              <button v-if="saveError && !result.runId.startsWith('local-')" :disabled="saving" class="mt-3 text-sm underline" @click="backend.retry">Réessayer l’enregistrement</button>
-              <a v-if="submission?.transactionHash" :href="`https://testnet.monadvision.com/tx/${submission.transactionHash}`" target="_blank" rel="noopener noreferrer" class="mt-3 text-xs text-sky-200 underline">Voir la transaction</a>
-              <div class="mt-7 flex gap-8 text-sm"><span><strong class="text-xl text-amber-200">{{ result.coins }}</strong> pièces</span><span><strong class="text-xl">{{ Math.floor(state.distance / 1000) }}</strong> mètres</span></div>
-              <div class="mt-8 flex flex-wrap justify-center gap-3">
-                <button class="runner-button" @click="start(mode)">Nouvelle piste</button>
+            <div v-if="phase === 'finished' && result" class="absolute inset-0 z-20 bg-[#102e46]">
+              <img src="/menu-bg.webp" alt="" class="absolute inset-0 size-full object-cover object-top">
+              <div class="absolute inset-0 bg-linear-to-b from-[#0b2235]/75 via-[#0b2235]/35 to-[#0b2235]/85" />
+              <div class="absolute inset-0 overflow-y-auto">
+                <div class="mx-auto flex min-h-full w-full max-w-[110rem] flex-col gap-5 px-4 pb-20 pt-5 sm:px-8 lg:gap-[3.5vh] lg:pt-[3vh]">
+                  <h2 class="runner-title text-center">Course terminée</h2>
+                  <div class="grid gap-5 lg:items-start" :class="clip ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,1.3fr)]'">
+                    <div class="runner-card" role="status">
+                      <div class="p-5 sm:p-7">
+                        <p class="text-sm font-black uppercase tracking-wider text-sky-200">Ton score <span class="font-semibold normal-case tracking-normal text-sky-200/70">· {{ result.pseudo }}</span></p>
+                        <p class="mt-2 break-all text-[clamp(3.5rem,6.5vw,6.5rem)] font-black leading-none tracking-tight tabular-nums">{{ result.score.toLocaleString('fr-FR') }}</p>
+                        <p class="mt-1 text-sm font-black uppercase tracking-wider text-sky-200">Points</p>
+                        <p class="mx-auto mt-4 flex w-fit items-center gap-2 rounded-full border-2 px-4 py-1.5 text-sm font-semibold" :class="submission?.status === 'confirmed' ? 'border-emerald-400 text-emerald-300' : 'border-[#ffcf45] text-amber-200'">
+                          <svg viewBox="0 0 24 24" fill="currentColor" class="size-4 shrink-0" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" /></svg>
+                          {{ submission || saving ? savedLabel : 'Résultat local' }}
+                        </p>
+                        <p v-if="notice" class="mt-3 text-center text-xs text-amber-200">{{ notice }}</p>
+                        <p v-if="saveError" class="mt-3 text-center text-sm text-amber-200">{{ saveError }}</p>
+                        <button v-if="saveError && !result.runId.startsWith('local-')" :disabled="saving" class="mx-auto mt-2 block text-sm underline" @click="backend.retry">Réessayer l’enregistrement</button>
+                        <a v-if="submission?.transactionHash" :href="`https://testnet.monadvision.com/tx/${submission.transactionHash}`" target="_blank" rel="noopener noreferrer" class="mx-auto mt-2 block w-fit text-xs text-sky-200 underline">Voir la transaction sur Monad</a>
+                        <div class="mt-5 grid grid-cols-2 gap-3">
+                          <p class="runner-tile"><svg viewBox="0 0 24 24" class="size-9 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#ffcf45" /><circle cx="12" cy="12" r="6" fill="none" stroke="#b88420" stroke-width="2" /></svg><span><strong class="block text-2xl font-black leading-none tabular-nums">{{ result.coins }}</strong><span class="text-sm text-sky-100/80">pièces</span></span></p>
+                          <p class="runner-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="size-9 shrink-0 text-sky-300" aria-hidden="true"><circle cx="15" cy="4.5" r="1.8" fill="currentColor" /><path d="m7 10 4-2.5 3 1.5 1.5 3.5 3 1M11 7.5 9.5 13l3.5 2.5-1 5M9.5 13 7 16H4" /></svg><span><strong class="block text-2xl font-black leading-none tabular-nums">{{ Math.floor(state.distance / 1000) }}</strong><span class="text-sm text-sky-100/80">mètres</span></span></p>
+                        </div>
+                        <button class="runner-button runner-replay mt-5 flex w-full items-center justify-center gap-3 uppercase tracking-wide" @click="start(mode)">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" class="size-7" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4M4 4v4h4M4 13a8 8 0 0 0 14.3 4M20 20v-4h-4" /></svg>
+                          Rejouer
+                        </button>
+                        <button class="mt-3 w-full rounded-xl border-2 border-sky-200/70 py-3 text-sm font-black uppercase tracking-wider text-sky-100 hover:bg-white/10" @click="changePlayer">Changer de joueur</button>
+                      </div>
+                    </div>
+
+                    <section v-if="clip" class="runner-card" aria-labelledby="highlights-title">
+                      <div class="p-3 sm:p-4">
+                        <h3 id="highlights-title" class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"><span class="size-2.5 rounded-full bg-rose-400 motion-safe:animate-pulse" aria-hidden="true" />Highlights</h3>
+                        <video :src="clip" autoplay loop muted playsinline aria-label="Tes meilleurs moments de la course" class="mt-3 aspect-4/3 w-full -scale-x-100 rounded-xl border border-white/10 bg-[#0b2235] object-cover" />
+                        <p class="mt-2 text-xs text-sky-100/70">Tes dernières secondes de course · vidéo locale, jamais envoyée.</p>
+                      </div>
+                    </section>
+
+                    <section class="runner-card lg:col-start-3" aria-labelledby="final-board-title">
+                      <div class="p-4 sm:p-6">
+                        <h3 id="final-board-title" class="flex items-center gap-3 text-2xl font-black uppercase tracking-tight sm:text-3xl">
+                          <svg viewBox="0 0 24 24" fill="currentColor" class="size-9 shrink-0 text-[#ffcf45]" aria-hidden="true"><path d="M6 3h12v2h3v3a4 4 0 0 1-4 4h-.3A6 6 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A6 6 0 0 1 7.3 12H7a4 4 0 0 1-4-4V5h3V3Zm0 4H5v1a2 2 0 0 0 1.2 1.8A6 6 0 0 1 6 8V7Zm12 0v1c0 .6-.1 1.2-.2 1.8A2 2 0 0 0 19 8V7h-1Z" /></svg>
+                          <span>Classement <span class="text-[#ffcf45]">Top 5</span></span>
+                        </h3>
+                        <p v-if="!board" class="mt-4 text-sm text-zinc-300">{{ leaderboardState === 'unavailable' ? 'Classement indisponible pour le moment.' : 'Chargement du classement…' }}</p>
+                        <template v-else>
+                          <p class="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_auto] gap-3 px-4 text-xs font-black uppercase tracking-wider text-sky-300" aria-hidden="true"><span>Rang</span><span>Joueur</span><span>Score</span></p>
+                          <ol class="mt-2 grid gap-1.5">
+                            <li v-for="row in finalRows" :key="row.key" class="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-4 py-2" :class="row.me ? 'border-2 border-[#ffcf45] bg-[#ffcf45]/10' : 'border-white/10 bg-white/[0.03]'">
+                              <span v-if="row.rank <= 3" class="runner-medal" :class="['runner-gold', 'runner-silver', 'runner-bronze'][row.rank - 1]">{{ row.rank }}</span>
+                              <span v-else class="pl-2.5 text-lg font-black tabular-nums" :class="row.me ? 'text-white' : 'text-sky-300'">{{ row.rank > 25 ? '25+' : row.rank }}</span>
+                              <span class="min-w-0">
+                                <span class="block truncate text-base font-semibold sm:text-lg" :class="{ 'font-black text-[#ffcf45]': row.me }">{{ row.name }}</span>
+                                <span v-if="row.me" class="block truncate text-xs text-sky-100/80">{{ row.note }}</span>
+                              </span>
+                              <strong class="text-base font-black tabular-nums sm:text-lg" :class="{ 'text-[#ffcf45]': row.me }">{{ row.score.toLocaleString('fr-FR') }}</strong>
+                            </li>
+                          </ol>
+                          <p class="mt-4 flex items-center gap-3 text-xs text-sky-100/70"><span class="h-px flex-1 bg-white/15" />{{ leaderboardState === 'loading' ? 'Mise à jour…' : submission?.status === 'confirmed' ? 'Actualisé après confirmation' : 'Classement avant ta course' }} · bloc {{ BigInt(board.blockNumber).toLocaleString('fr-FR') }}<span class="h-px flex-1 bg-white/15" /></p>
+                        </template>
+                      </div>
+                    </section>
+                  </div>
+                </div>
               </div>
-              <button class="mt-5 text-sm text-zinc-400 underline underline-offset-4" @click="changePlayer">Changer de joueur</button>
             </div>
 
             <div v-if="rendererError" class="absolute inset-0 flex items-center justify-center bg-[#12354d]/95 p-8 text-center"><p role="alert" class="max-w-md leading-relaxed text-rose-200">{{ rendererError }}</p></div>
@@ -158,11 +258,12 @@ useHead({ title: 'Play · Subway Frauder' })
             <div v-if="cameraTracked" class="mt-2 grid grid-cols-3 gap-1 text-center text-[10px]"><span v-for="(label, index) in ['Gauche', 'Centre', 'Droite']" :key="label" class="rounded-md py-1" :class="movement.input.lane === index - 1 ? 'bg-amber-300/20 text-sky-200' : 'text-zinc-600'">{{ label }}</span></div>
           </section>
 
-            <div class="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-linear-to-t from-[#12354d]/95 to-transparent px-4 pb-3 pt-8 text-xs">
+            <div class="absolute inset-x-0 bottom-0 z-30 flex flex-wrap items-center justify-between gap-2 bg-linear-to-t from-[#12354d]/95 to-transparent px-4 pb-3 pt-8 text-xs">
               <span class="text-zinc-200">{{ firstPerson ? 'Vue à la première personne' : 'Vue extérieure' }} · {{ state.lives }} / 3 vies</span>
               <div class="flex items-center gap-2">
                 <button class="runner-control" :aria-pressed="firstPerson" @click="firstPerson = !firstPerson">{{ firstPerson ? 'Vue extérieure' : 'Vue FPV' }}</button>
                 <button v-if="phase === 'running' || phase === 'countdown'" class="runner-control" @click="pause()">Pause</button>
+                <button class="runner-control" :aria-pressed="muted" @click="muted = !muted">{{ muted ? 'Activer le son' : 'Couper le son' }}</button>
                 <button class="runner-control" :aria-pressed="fullscreen" @click="toggleFullscreen">{{ fullscreen ? 'Quitter le plein écran' : 'Plein écran' }}</button>
               </div>
             </div>
@@ -216,11 +317,26 @@ useHead({ title: 'Play · Subway Frauder' })
 .runner-stage h1 { font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif; text-shadow: 0 3px 0 #163f58, 0 5px 18px #163f5860; }
 .runner-stage { height: calc(100dvh - 76px); min-height: 520px; }
 .runner-stage:fullscreen { width: 100vw; height: 100dvh; min-height: 0; border: 0; border-radius: 0; }
+.runner-logo, .runner-press, .runner-title { font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif; font-style: italic; font-weight: 900; text-transform: uppercase; paint-order: stroke fill; }
+.runner-logo { display: flex; flex-direction: column; transform: rotate(-3deg); font-size: clamp(2rem, 5vw, 4.5rem); line-height: 0.9; letter-spacing: -0.02em; white-space: nowrap; -webkit-text-stroke: 0.16em #0b2235; text-shadow: 0 0.09em 0 #0b2235; }
+@media (min-width: 1024px) { .runner-logo { flex-direction: row; justify-content: center; gap: 0.28em; transform: rotate(-2deg); } }
+.runner-press { font-size: clamp(1.5rem, 2.6vw, 2.5rem); letter-spacing: 0.04em; white-space: nowrap; color: #fff; -webkit-text-stroke: 0.2em #0b2235; text-shadow: 0 0.1em 0 #0b2235; }
+.runner-title { font-size: clamp(1.75rem, 4.4vw, 4.25rem); line-height: 1; color: #fff; -webkit-text-stroke: 0.16em #0b2235; text-shadow: 0 0.09em 0 #0b2235; }
+.runner-card { border-radius: 1.6rem; padding: 3px; background: linear-gradient(135deg, #ffcf45 0 8%, #ffffff2e 8% 92%, #ffcf45 92%); box-shadow: 0 18px 40px #06162499; }
+.runner-card > div { height: 100%; border-radius: calc(1.6rem - 3px); background: #102e46f5; }
+.runner-tile { display: flex; align-items: center; gap: 0.75rem; border: 1px solid #ffffff1f; border-radius: 1rem; background: #ffffff0a; padding: 0.8rem 1rem; }
+.runner-medal { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 9999px; font-weight: 900; color: #0b2235; box-shadow: inset 0 0 0 3px #ffffff59, 0 3px 0 #0b2235; }
+.runner-gold { background: linear-gradient(160deg, #ffe58a, #e0a021); }
+.runner-silver { background: linear-gradient(160deg, #f4f7fb, #97a4b5); }
+.runner-bronze { background: linear-gradient(160deg, #f0b07a, #a65c27); }
+.runner-press:hover { color: #ffcf45; }
+.runner-press:disabled { cursor: wait; opacity: 0.5; }
 .runner-control { border: 1px solid #ffffff45; border-radius: 0.6rem; background: #12354dcc; padding: 0.65rem 0.8rem; color: #fff; }
 .runner-control:hover { background: #24536e; }
 .runner-button { border-radius: 0.8rem; padding: 0.85rem 1.1rem; font-size: 0.875rem; font-weight: 650; transition: background 150ms; }
 .runner-button { background: #ffcf45; color: #173d58; box-shadow: 0 3px 0 #b88420; }
 .runner-button:hover { background: #ffe283; }
+.runner-replay { padding-block: 1rem; font-size: 1.25rem; font-weight: 900; }
 .runner-button:disabled { cursor: wait; opacity: 0.4; }
 .runner-touch { touch-action: none; border: 1px solid #ffffff20; border-radius: 0.65rem; padding: 0.8rem 0.3rem; font-size: 0.8rem; color: #d8d1ed; background: #12354dcc; }
 .runner-touch:active { background: #ffcf4530; }
