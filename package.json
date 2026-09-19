@@ -11,15 +11,19 @@
     "build": "nuxt build",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck",
+    "test:camera": "node --test app/tests/camera.test.mjs app/tests/movement.test.mjs app/tests/worker.test.mjs",
+    "test": "node --test app/tests/*.test.mjs shared/game/*.test.mjs"
   },
   "dependencies": {
     "nuxt": "^4.5.2",
+    "three": "0.183.1",
     "vue": "^3.5.43",
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/three": "0.183.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.11"
