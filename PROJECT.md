@@ -158,7 +158,7 @@ flowchart LR
 | Styles | Tailwind CSS 4, déjà en place |
 | Dépendances | pnpm uniquement |
 | Environnement | Node.js 24 |
-| Hébergement | Projet Vercel existant ; workflow GitHub Actions préparé pour les déploiements |
+| Hébergement | Vercel ; déploiement automatique via GitHub Actions sur `main`, validé |
 | Reconnaissance corporelle | MediaPipe proposé, à valider |
 | Rendu du jeu | À choisir selon la direction visuelle et le temps disponible |
 | API de validation | Routes serveur Nuxt proposées, à implémenter |
@@ -188,8 +188,8 @@ Définir tôt le format des commandes de jeu et du résultat de partie pour perm
 
 ## 12. Ordre de réalisation
 
-1. **Socle web et déploiement** : ouvrir la page du squelette sur une URL Vercel et vérifier sa mise à jour après un push sur `main`.
-2. **Commandes corporelles** : afficher et vérifier gauche, droite, saut et accroupissement avec la caméra réelle.
+1. **Socle web et déploiement — terminé** : squelette en ligne et mise à jour automatique après un push sur `main` vérifiées.
+2. **Commandes corporelles — prochaine étape** : afficher et vérifier gauche, droite, saut et accroupissement avec la caméra réelle.
 3. **Runner jouable** : compléter une partie avec obstacles, score et pièces.
 4. **Parcours blockchain minimal** : enregistrer un résultat et relire les données associées au joueur.
 5. **Boutique et classement** : acheter un skin avec les pièces gagnées, l'équiper et afficher les scores.
@@ -203,11 +203,17 @@ La démo doit montrer cette boucle complète, avec un retour clair à chaque ét
 
 ## 14. État actuel et décisions restantes
 
-Le dépôt contient le squelette Nuxt + Tailwind, une page d'accueil, la configuration TypeScript et pnpm, ainsi que la configuration du runtime Vercel. Le contrôle TypeScript et la génération du build Vercel ont été vérifiés localement. Un workflow GitHub Actions a été préparé pour vérifier et déployer les pushs sur `main`.
+État vérifié le **19 septembre 2026**.
 
-Le projet Vercel `hackathon-monad-subway-surfer` est relié au dépôt GitHub sur `main` et le squelette est accessible sur [le site de production](https://hackathon-monad-brown.vercel.app). L'activation du nouveau workflow nécessite ses secrets GitHub Actions et sa publication sur `main`.
+Le dépôt contient le squelette Nuxt + Tailwind, une page d'accueil, la configuration TypeScript et pnpm, ainsi que le runtime Vercel Node.js 24. La pipeline est publiée sur `main` et ses trois secrets GitHub Actions sont configurés.
+
+Chaque push ou fusion vers `main` déclenche l'installation avec pnpm et le contrôle TypeScript dans GitHub Actions. Le workflow transmet ensuite le code à Vercel, qui exécute le build avec pnpm et publie le site. Le build distant conserve la compatibilité avec le token limité au projet. Les déploiements Git natifs de Vercel sont désactivés pour laisser le workflow contrôler les publications.
+
+Le projet Vercel `hackathon-monad-subway-surfer` sert le [site de production](https://hackathon-monad-brown.vercel.app). L'[exécution du workflow validée](https://github.com/DVB-Ali-Noe/hackathon_monad-/actions/runs/35436466316) confirme la réussite du contrôle TypeScript, du build et du déploiement ; la page publique a également été vérifiée avec une réponse HTTP 200. Les commandes et le suivi des publications sont documentés dans [README.md](README.md).
 
 Le jeu, la caméra, le wallet, les contrats et la boutique ne sont pas encore implémentés.
+
+La prochaine étape est de valider la caméra, la calibration et les quatre commandes corporelles sur le matériel de la démo.
 
 Décisions à prendre :
 
