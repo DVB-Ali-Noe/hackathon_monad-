@@ -1,13 +1,18 @@
 # Monad Blitz Paris
 
-Runner contrôlé par les mouvements du joueur devant une webcam, avec scores,
-pièces et skins sur Monad. Le squelette Nuxt 4, Vue 3, TypeScript et Tailwind CSS 4
-est en place ; le gameplay et l'intégration blockchain restent à développer.
+Runner contrôlé par les mouvements du joueur devant une webcam, avec scores sur
+Monad testnet. Le MVP prévoit un pseudo et un relayer serveur, un parcours aléatoire
+à graine, une validation par rejeu, un rendu three.js et un fantôme. La boutique de
+skins est optionnelle, sans NFT ni token.
+
+Le squelette Nuxt 4, Vue 3, TypeScript et Tailwind CSS 4 est en place ; le gameplay,
+la caméra et l'intégration blockchain restent à développer.
 
 Le déploiement automatique sur `main` est opérationnel et a été validé le
 19 septembre 2026.
 
-- [Idée du projet et MVP](PROJECT.md)
+- [Décisions produit et MVP](PROJECT.md)
+- [Documentation technique](docs/README.md)
 - `AGENTS.md` : consignes locales pour Codex et les agents, fichier ignoré par Git.
 - `CLAUDE.md` : consignes locales pour Claude, fichier ignoré par Git.
 - [Site de production](https://hackathon-monad-brown.vercel.app)
@@ -94,6 +99,7 @@ toujours le build distant et ne réintroduit pas `vercel pull` avec ce token.
 
 ## Prochaine étape
 
-Prototyper la caméra et la calibration, puis vérifier les commandes gauche,
-droite, saut et accroupissement. Le périmètre du jeu et les choix restant à
-valider sont détaillés dans [PROJECT.md](PROJECT.md).
+Préciser les commandes et paramètres de rejeu dans [l'interface](docs/interface.md),
+puis prototyper la caméra, la calibration et les commandes gauche, droite, saut et
+accroupissement. Le runner utilisera une génération aléatoire à graine, sans dépendre
+des blocs Monad. Les décisions et points ouverts figurent dans [PROJECT.md](PROJECT.md).

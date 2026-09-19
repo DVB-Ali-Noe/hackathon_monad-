@@ -1,40 +1,58 @@
 # Monad Blitz Paris — Le projet
 
-> Un « Subway Surfers IRL » : ton corps devient la manette, tes performances et tes récompenses rejoignent Monad.
+Un « Subway Surfers IRL » : ton corps devient la manette, tes performances et tes
+récompenses rejoignent Monad.
 
-Ce document rassemble l'idée discutée pour le hackathon. Le concept est défini ; les choix signalés comme des propositions restent à valider à deux. « Monad Blitz » est le nom utilisé dans le squelette, pas un nom de jeu définitif.
+Ce document est la référence produit du dépôt. Il intègre les décisions validées
+par Noé le 19 septembre 2026 ; les propositions et détails techniques encore ouverts
+sont indiqués comme tels. « Monad Blitz » reste un nom provisoire.
 
 ## 1. Concept
 
-Créer un runner contrôlé par les mouvements du joueur devant une caméra. Sur l'écran, le personnage avance et des obstacles arrivent. Dans la pièce, le joueur saute, s'accroupit et se déplace à gauche ou à droite pour les éviter.
+Un runner contrôlé par les mouvements du joueur devant une caméra. Sur l'écran, le
+personnage avance et des obstacles arrivent. Dans la pièce, le joueur saute,
+s'accroupit et se déplace à gauche ou à droite pour les éviter.
 
-Une IA de reconnaissance corporelle transforme les mouvements filmés en commandes de jeu. Le joueur accumule un score et ramasse des pièces. Le score est enregistré sur Monad et les pièces permettent d'acheter des skins pour personnaliser le personnage.
+Un modèle de reconnaissance corporelle transforme les mouvements filmés en commandes
+de jeu. Le joueur accumule un score et ramasse des pièces.
 
-La boucle centrale est : **bouger → éviter les obstacles → gagner des pièces → améliorer son score → acheter un skin → rejouer**.
+Le parcours est généré aléatoirement avec une graine conservée pour chaque partie.
+Cette graine permet au serveur de reconstruire le parcours et de rejouer les commandes.
+La génération du parcours ne dépend pas des blocs Monad.
+
+Le fantôme du joueur précédent donne une cible à rattraper et pousse à rejouer.
+Pour l'affronter sur le même parcours, la nouvelle partie reprend sa graine.
+
+La boucle centrale est : bouger, éviter les obstacles, rattraper le fantôme
+précédent, enregistrer son score, laisser son propre fantôme au suivant.
 
 ## 2. Contexte et objectif
 
-- Hackathon Monad Blitz Paris, avec une équipe de deux personnes.
-- Une expérience dans le navigateur, avec une webcam et un écran devant le joueur.
-- Une démo immédiatement compréhensible, que le jury et les autres participants peuvent essayer.
-- Un premier objectif concret : terminer une partie contrôlée avec le corps, enregistrer son résultat, puis utiliser ses pièces dans la boutique.
+Hackathon Monad Blitz Paris, équipe de deux personnes. Une expérience dans le
+navigateur, avec une webcam et un écran devant le joueur.
 
-La priorité est la qualité des commandes corporelles. Si le jeu répond mal aux mouvements, les autres fonctionnalités ne suffiront pas à rendre la démo convaincante.
+La démo doit être facilement essayable par les participants. Le format du jugement
+et les horaires restent à confirmer auprès de l'organisation.
+Voir [Démo et pitch](docs/demo-et-pitch.md).
+
+La priorité absolue est la qualité des commandes corporelles. Si le jeu répond mal
+aux mouvements, aucune autre fonctionnalité ne sauve la démonstration.
 
 ## 3. Parcours du joueur
 
-Parcours proposé pour le MVP :
-
-1. Ouvrir le site et accéder à l'écran de lancement.
+1. Ouvrir le site et saisir un pseudo.
 2. Autoriser la caméra et se placer entièrement dans le cadre.
 3. Effectuer une courte calibration debout, au centre.
 4. Lancer la partie après un compte à rebours.
-5. Éviter les obstacles et collecter les pièces avec ses mouvements.
-6. Voir son score et les pièces obtenues sur l'écran de fin.
-7. Connecter son wallet, s'il ne l'est pas déjà, et enregistrer le résultat selon le parcours de validation retenu.
-8. Consulter le classement, acheter un skin et relancer une partie.
+5. Éviter les obstacles et collecter les pièces, avec le fantôme précédent visible
+   devant.
+6. Voir son score et ses pièces sur l'écran de fin, puis le classement.
+7. Relancer une partie.
 
-Les interactions avec le wallet doivent se produire en dehors de la phase de jeu. Le moment exact de la connexion, avant la partie ou avant l'enregistrement, reste à décider avec le mécanisme de validation des résultats.
+Il n'y a pas de connexion de wallet. Le joueur saisit un pseudo et le serveur
+enregistre le résultat pour lui avec une clé relayer privée, qui paie les transactions.
+Le pseudo sert à l'affichage ; le mécanisme de session identifiant le joueur reste
+à définir. L'inventaire n'est pas lié à un wallet joueur.
 
 ## 4. Gameplay
 
@@ -48,180 +66,217 @@ Les interactions avec le wallet doivent se produire en dehors de la phase de jeu
 | Saut | Franchir un obstacle bas |
 | Accroupissement | Passer sous un obstacle haut |
 
-Trois couloirs constituent le format recommandé pour le prototype. La course vers l'avant est automatique : le joueur reste dans sa zone devant la caméra.
+Trois couloirs. La course vers l'avant est automatique, le joueur reste dans sa zone
+devant la caméra.
 
 ### Obstacles et difficulté
 
-- Obstacles bloquant un couloir, à contourner.
-- Obstacles bas, à franchir en sautant.
-- Obstacles hauts, à éviter en s'accroupissant.
-- Pièces disposées sur le parcours pour encourager les changements de trajectoire.
-- Difficulté progressive, avec une vitesse et une fréquence d'obstacles croissantes.
+Obstacles bloquant un couloir, obstacles bas à franchir en sautant, obstacles hauts
+à éviter en s'accroupissant, pièces disposées pour encourager les changements de
+trajectoire. Vitesse et fréquence croissantes.
 
-Les séquences doivent rester réalisables : éviter les obstacles incompatibles ou trop rapprochés pour un mouvement physique. Les règles de collision, le nombre de vies et la durée des parties restent à fixer. Des parties courtes sont recommandées pour faire tourner les joueurs pendant la démo.
+Les séquences doivent rester physiquement réalisables. Des parties courtes sont
+recommandées pour faire tourner les joueurs pendant la démo.
+
+Le parcours utilise un générateur pseudo-aléatoire déterministe initialisé avec
+une graine tirée au lancement d'un nouveau parcours. La même graine et la même
+version du moteur doivent produire les mêmes obstacles et pièces. Le générateur
+filtre les séquences impossibles à réaliser physiquement.
+
+La simulation avance à pas de temps fixe, indépendamment du rendu. Sa fréquence
+reste à choisir après des essais de réactivité ; 5 ticks par seconde n'est pas une
+décision validée. Les pauses de suivi caméra suspendent la simulation.
 
 ### Retour visuel
 
-L'écran doit rendre lisibles le personnage, les obstacles, le score et les pièces. Un petit aperçu de la caméra avec les points du corps peut aider à comprendre la détection et à se repositionner.
-
-En cas de perte du suivi, le comportement proposé est de mettre le jeu en pause et d'indiquer au joueur comment revenir dans le cadre.
+Le personnage, les obstacles, le score et les pièces doivent rester lisibles depuis
+la salle. Un petit aperçu de la caméra avec les points du corps aide le joueur à se
+repositionner. En cas de perte du suivi, le jeu se met en pause et indique comment
+revenir dans le cadre.
 
 ## 5. Reconnaissance corporelle
 
-Approche recommandée : utiliser un modèle de pose existant, puis des règles simples pour interpréter ses points corporels. [MediaPipe Pose Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/web_js) est la piste proposée, encore à intégrer et à tester sur le matériel de la démo.
+Approche proposée : MediaPipe Pose Landmarker, puis des règles simples sur les points
+corporels. Traitement local dans le navigateur, sans envoi ni stockage du flux vidéo.
 
-Le traitement vidéo serait effectué localement dans le navigateur. L'architecture proposée ne prévoit ni stockage ni envoi du flux vidéo au serveur.
+Points à traiter dans le prototype :
 
-Points à travailler dans le prototype :
+- calibrer une position neutre pour adapter les seuils à chaque joueur ;
+- déduire le couloir du déplacement latéral, en tolérant la dérive du joueur ;
+- distinguer un saut d'un simple mouvement du buste en combinant plusieurs points
+  et leur évolution ;
+- détecter l'accroupissement à partir de la hauteur relative du corps ;
+- lisser les variations et garantir qu'un geste produit une seule commande ;
+- vérifier que gauche et droite correspondent au ressenti avec l'aperçu en miroir ;
+- préserver la fluidité du rendu pendant l'analyse des images.
 
-- Calibrer une position neutre pour adapter les seuils à chaque joueur.
-- Déduire le couloir à partir du déplacement latéral du corps.
-- Combiner plusieurs points et leur évolution dans le temps pour distinguer un saut d'un simple mouvement du buste.
-- Détecter l'accroupissement à partir de la posture et de la hauteur relative du corps.
-- Lisser les petites variations et éviter qu'un seul geste produise plusieurs commandes.
-- Vérifier que les commandes gauche/droite correspondent au ressenti du joueur avec l'aperçu en miroir.
-- Préserver la fluidité du rendu pendant l'analyse des images.
-
-Le premier prototype doit valider ces quatre commandes avant d'investir dans des décors ou des animations complexes.
+Ces quatre commandes doivent être validées avant tout investissement dans les décors
+ou les animations. C'est le poste de travail le plus long du projet et il demande
+deux personnes : une devant la caméra, une sur les seuils.
 
 ## 6. Score, pièces et skins
 
-### Score
+Une progression du score avec la distance parcourue est proposée ; la formule reste
+à fixer. Les pièces sont ramassées pendant la partie et servent de monnaie pour la
+boutique ; elles sont distinctes du score. Le serveur recalcule les deux par rejeu.
 
-Le score représente la performance de la partie. Une progression selon la durée de survie ou la distance parcourue est proposée ; la formule exacte et les éventuels bonus restent à définir.
+Les skins sont uniquement cosmétiques, avec quelques variantes et des prix fixes.
+L'inventaire reste dans le contrat, sans NFT ni token. Un bitmask pour représenter
+les skins possédés est proposé dans la spécification backend.
 
-Le joueur doit pouvoir comparer son résultat à son meilleur score et au classement des autres participants.
-
-### Pièces
-
-Les pièces sont ramassées pendant la partie et servent de monnaie de jeu pour la boutique. Elles sont distinctes du score : une meilleure performance et un solde dépensable répondent à deux usages différents.
-
-Proposition pour le MVP : enregistrer le solde dans le contrat du jeu, sans créer de token échangeable séparé. Les pièces d'une partie sont créditées une seule fois, lors de la validation de son résultat.
-
-### Skins
-
-Les skins modifient l'apparence du personnage. Pour le prototype, ils seraient uniquement cosmétiques, avec quelques variantes et des prix fixes.
-
-L'inventaire peut être associé à l'adresse du joueur dans le contrat. Le choix entre de simples identifiants de skins débloqués et des NFT reste ouvert ; des NFT ne sont pas nécessaires pour démontrer l'achat et l'équipement d'un skin.
+La boutique est la fonctionnalité la moins prioritaire du projet. Elle saute sans
+conséquence si le temps manque.
 
 ## 7. Rôle de Monad
 
-Répartition recommandée :
-
 | Dans le navigateur | Sur Monad |
 | --- | --- |
-| Caméra et reconnaissance des mouvements | Enregistrement des résultats validés |
-| Simulation du jeu et collisions | Meilleur score par joueur |
-| Calcul provisoire du score et des pièces | Solde de pièces et achats |
-| Rendu, animations et interface | Inventaire des skins |
+| Caméra et reconnaissance des mouvements | Résultats validés par le serveur |
+| Génération aléatoire, simulation et collisions | Meilleur score et nombre de parties par joueur |
+| Rendu, animations et interface | Solde de pièces, skins possédés et équipé |
+| Lecture du classement et rejeu des fantômes | Stockage des fantômes proposé, à préciser |
 
-Une transaction à la fin de la partie peut enregistrer le résultat et créditer les pièces. L'achat d'un skin constitue une autre transaction. Les mouvements individuels n'ont pas besoin de transactions.
+Une transaction à la fin de la partie enregistre le résultat et crédite les pièces.
+L'achat d'un skin en constitue une autre. Les mouvements individuels ne déclenchent
+aucune transaction.
 
-Le classement peut être construit à partir des résultats et événements du contrat, avec une lecture ou une indexation adaptée au nombre de joueurs.
+Monad testnet conserve les résultats et l'état des joueurs. La validation par rejeu
+est réalisée côté serveur et ne dépend pas de la blockchain.
 
-La valeur mise en avant est la persistance publique des résultats et de l'inventaire lié au wallet. La proposition actuelle n'exige pas à elle seule les performances spécifiques de Monad : cet argument reste à préciser dans le pitch.
+Le suivi de la confirmation est prévu après chaque soumission. Les temps de
+confirmation, coûts et éventuelles démonstrations de charge doivent être mesurés sur
+l'implémentation ; aucun débit ou coût de classement n'est garanti à ce stade.
+
+Détails dans [Backend Monad](docs/backend-monad.md) et
+[Référence Monad](docs/monad-reference.md).
 
 ## 8. Validation des résultats et confiance
 
-**Un score enregistré sur la blockchain ne prouve pas que le joueur a réellement exécuté les mouvements.** Le navigateur est modifiable et peut transmettre des résultats fabriqués.
+Un score enregistré ne prouve pas que le joueur a exécuté les mouvements. Le
+navigateur est modifiable et peut transmettre des résultats fabriqués.
 
-Approche proposée pour le hackathon : un serveur de confiance vérifie la cohérence d'une session avant de signer un résultat que le contrat accepte.
+L'approche retenue est la validation par rejeu. Le client transmet l'identifiant de
+partie, la graine, la version du moteur, le nombre de ticks, les commandes, le score
+et les pièces annoncés. Le serveur vérifie les paramètres de la session, reconstruit
+le parcours avec la même graine et rejoue les commandes dans la simulation partagée.
+Il recalcule le score et les pièces et refuse une partie incohérente.
 
-- Identifier chaque partie avec un identifiant unique.
-- Contrôler côté serveur la durée, les limites de score et les pièces possibles.
-- Lier l'autorisation au joueur, à la partie, au score, aux pièces, au réseau et au contrat concernés.
-- Empêcher la réutilisation d'une même partie pour recevoir plusieurs récompenses.
-- Conserver toute clé de signature uniquement côté serveur.
+Chaque partie doit être créditée une seule fois. L'identification de la session et
+la protection contre les doubles soumissions restent à implémenter, y compris en
+cas de nouvelle tentative après un échec réseau.
 
-Ces contrôles limitent certains abus mais ne prouvent pas l'authenticité du flux caméra. Un serveur qui signe simplement les valeurs envoyées par le navigateur ne résout pas le problème.
+Après validation, le relayer signe et envoie la transaction. Le rejeu vérifie la
+partie ; la signature autorise l'écriture. Aucun wallet joueur ni protocole de
+signature de résultat séparé n'est prévu pour le MVP.
+Voir [Contrat d'interface](docs/interface.md).
 
-L'interface doit distinguer le résultat local, une transaction en attente et un résultat confirmé. En cas d'échec réseau ou de refus du wallet, l'enregistrement doit pouvoir être retenté sans créditer deux fois les pièces.
+Ce que la validation ne fait pas : elle ne prouve pas l'authenticité du flux caméra.
+Un joueur qui injecterait des inputs cohérents sans bouger passerait le contrôle.
+Cette limite est assumée et annoncée telle quelle.
 
-## 9. Architecture envisagée
+L'interface distingue le résultat local, la transaction en attente et le résultat
+confirmé. En cas d'échec, l'enregistrement peut être retenté sans créditer deux fois
+les pièces.
 
-```mermaid
-flowchart LR
-    Camera[Webcam] --> Pose[Estimation de pose locale]
-    Pose --> Controls[Interprétation des mouvements]
-    Controls --> Game[Runner dans le navigateur]
-    Game --> Result[Résultat provisoire]
-    Result --> API[API de validation proposée]
-    API --> Signed[Résultat signé]
-    Signed --> Wallet[Wallet du joueur]
-    Wallet --> Monad[Contrat sur Monad]
-    Monad --> UI[Classement et boutique]
-```
+## 9. Architecture
 
 | Partie | Choix ou état |
 | --- | --- |
-| Application web | Nuxt 4, Vue 3 et TypeScript, déjà en place |
-| Styles | Tailwind CSS 4, déjà en place |
+| Application web | Nuxt 4, Vue 3, TypeScript, en place |
+| Styles | Tailwind CSS 4, en place |
 | Dépendances | pnpm uniquement |
 | Environnement | Node.js 24 |
-| Hébergement | Vercel ; déploiement automatique via GitHub Actions sur `main`, validé |
-| Reconnaissance corporelle | MediaPipe proposé, à valider |
-| Rendu du jeu | À choisir selon la direction visuelle et le temps disponible |
-| API de validation | Routes serveur Nuxt proposées, à implémenter |
-| Wallet et contrat | Intégration à choisir et à implémenter |
+| Hébergement | Vercel, déploiement via GitHub Actions sur `main`, validé |
+| Reconnaissance corporelle | MediaPipe Pose Landmarker, proposé |
+| Rendu du jeu | three.js en composant client, boucle de rendu propre |
+| Simulation | module pur partagé navigateur et serveur, pas de temps fixe |
+| Parcours | génération pseudo-aléatoire à graine conservée, indépendante de Monad |
+| API | routes serveur Nuxt, relayer côté serveur |
+| Réseau | Monad testnet, chain ID 10143 |
+| Contrat | contrat unique, sans proxy ni token |
 
-## 10. Périmètre recommandé pour le MVP
+## 10. Périmètre du MVP
 
-- Un seul joueur, une caméra et trois couloirs.
-- Les quatre commandes corporelles fiables.
-- Un parcours avec obstacles, collisions et difficulté progressive.
-- Collecte de pièces et écran de résultat.
-- Connexion d'un wallet et enregistrement d'une partie sur Monad.
-- Un classement simple.
-- Une boutique avec quelques skins, achat et équipement.
+Par ordre de priorité décroissante :
 
-À envisager après cette boucle complète : multijoueur en temps réel, tournois, nouveaux environnements, marketplace de skins et détection de fraude plus avancée.
+1. Les quatre commandes corporelles fiables, avec calibration.
+2. Un parcours jouable avec obstacles, collisions et difficulté progressive.
+3. Collecte de pièces et écran de résultat.
+4. Enregistrement du score sur Monad et classement affiché avec les pseudos.
+5. Badge de finalité après soumission.
+6. Fantôme du joueur précédent.
+7. Boutique de skins, achat et équipement.
 
-## 11. Répartition proposée à deux
+Les six premiers points constituent la démonstration. Le septième est optionnel.
+
+À envisager après : multijoueur en temps réel, tournois, nouveaux environnements,
+marketplace de skins, détection de fraude plus avancée.
+
+## 11. Répartition
 
 | Personne | Responsabilité principale |
 | --- | --- |
-| Développeur A | Caméra, calibration, reconnaissance des mouvements et moteur de jeu |
-| Développeur B | Contrat, validation des résultats, wallet, classement et boutique |
-| Ensemble | Interface commune, intégration, essais physiques et préparation de la démo |
+| Développeur A | Caméra, calibration, reconnaissance des mouvements, moteur de jeu |
+| Développeur B | Contrat, routes serveur, relayer, classement, fantômes |
+| Ensemble | Interface commune, intégration, essais physiques, préparation de la démo |
 
-Définir tôt le format des commandes de jeu et du résultat de partie pour permettre aux deux parties d'avancer indépendamment.
+Une fois la boucle score et classement fonctionnelle, le développeur B peut rejoindre
+le réglage des commandes corporelles. Les durées de réalisation restent à estimer.
+
+Le [contrat d'interface](docs/interface.md) doit être précisé tôt pour que les deux
+parties partagent les mêmes commandes, paramètres de parcours et résultats.
 
 ## 12. Ordre de réalisation
 
-1. **Socle web et déploiement — terminé** : squelette en ligne et mise à jour automatique après un push sur `main` vérifiées.
-2. **Commandes corporelles — prochaine étape** : afficher et vérifier gauche, droite, saut et accroupissement avec la caméra réelle.
-3. **Runner jouable** : compléter une partie avec obstacles, score et pièces.
-4. **Parcours blockchain minimal** : enregistrer un résultat et relire les données associées au joueur.
-5. **Boutique et classement** : acheter un skin avec les pièces gagnées, l'équiper et afficher les scores.
-6. **Démo complète** : tester l'ensemble avec les deux membres de l'équipe et des conditions de cadrage différentes.
+1. Socle web et déploiement — terminé.
+2. Préciser l'interface, les paramètres de rejeu et la fréquence du pas fixe.
+3. Commandes corporelles — gauche, droite, saut, accroupissement, sur la caméra réelle.
+4. Runner jouable avec parcours aléatoire à graine, obstacles, score et pièces.
+5. Sessions, rejeu serveur et protection contre les doubles soumissions.
+6. Enregistrement du score sur testnet, classement et suivi de confirmation.
+7. Fantôme du joueur précédent.
+8. Boutique et skins.
+9. Essais à plusieurs joueurs et préparation de la démo.
 
 ## 13. Démo cible
 
-Un participant se place devant l'écran, effectue la calibration et joue une courte partie. Le public voit ses mouvements contrôler le personnage. À la fin, son résultat est enregistré sur Monad, son classement apparaît et ses pièces lui permettent d'acheter un skin visible lors de la partie suivante.
+Un participant se place devant l'écran, effectue la calibration et joue une courte
+partie, avec le fantôme du joueur précédent devant lui. Le public voit ses mouvements
+contrôler le personnage. À la fin, son résultat est enregistré sur Monad, le badge de
+finalité s'affiche, son pseudo apparaît au classement et son propre fantôme devient
+la cible du joueur suivant.
 
-La démo doit montrer cette boucle complète, avec un retour clair à chaque étape.
+Ouvrir la station avant les pitchs est recommandé pour recueillir des essais et
+remplir le classement. Les horaires exacts restent à confirmer.
 
-## 14. État actuel et décisions restantes
+## 14. État et décisions
 
-État vérifié le **19 septembre 2026**.
+État vérifié le 19 septembre 2026. Le dépôt contient le squelette Nuxt et Tailwind,
+la configuration TypeScript et pnpm, le runtime Vercel Node.js 24 et la pipeline
+GitHub Actions publiée sur `main`. Le jeu, la caméra, le contrat et les routes
+serveur ne sont pas implémentés.
 
-Le dépôt contient le squelette Nuxt + Tailwind, une page d'accueil, la configuration TypeScript et pnpm, ainsi que le runtime Vercel Node.js 24. La pipeline est publiée sur `main` et ses trois secrets GitHub Actions sont configurés.
+Décisions validées par Noé :
 
-Chaque push ou fusion vers `main` déclenche l'installation avec pnpm et le contrôle TypeScript dans GitHub Actions. Le workflow transmet ensuite le code à Vercel, qui exécute le build avec pnpm et publie le site. Le build distant conserve la compatibilité avec le token limité au projet. Les déploiements Git natifs de Vercel sont désactivés pour laisser le workflow contrôler les publications.
+- pas de connexion wallet, saisie d'un pseudo et relayer côté serveur ;
+- validation des résultats par rejeu serveur ;
+- simulation déterministe partagée et pas de temps fixe ;
+- parcours généré aléatoirement, avec une graine conservée pour le rejeu ;
+- aucune génération du parcours à partir des blocs Monad pour cette version ;
+- fantôme du joueur précédent, avec celui du leader pour la démo ;
+- boutique optionnelle et inventaire sans NFT ni token, dans un contrat unique ;
+- rendu three.js, trois couloirs en perspective ;
+- réseau Monad testnet, chain ID 10143.
 
-Le projet Vercel `hackathon-monad-subway-surfer` sert le [site de production](https://hackathon-monad-brown.vercel.app). L'[exécution du workflow validée](https://github.com/DVB-Ali-Noe/hackathon_monad-/actions/runs/35436466316) confirme la réussite du contrôle TypeScript, du build et du déploiement ; la page publique a également été vérifiée avec une réponse HTTP 200. Les commandes et le suivi des publications sont documentés dans [README.md](README.md).
+Décisions restantes :
 
-Le jeu, la caméra, le wallet, les contrats et la boutique ne sont pas encore implémentés.
-
-La prochaine étape est de valider la caméra, la calibration et les quatre commandes corporelles sur le matériel de la démo.
-
-Décisions à prendre :
-
-- Nom définitif et direction visuelle du jeu.
-- Rendu 2D, en perspective ou 3D.
-- Matériel, cadrage et distance de jeu pour la démo.
-- Règles de score, collisions, durée et difficulté.
-- Réseau Monad cible et solution de connexion du wallet.
-- Validation des sessions et niveau de confiance assumé.
-- Prix des skins, règles des pièces et représentation de l'inventaire.
-- Répartition nominative et temps disponible.
+- nom définitif du jeu ;
+- provenance des assets et niveau de détail du rendu ;
+- matériel, cadrage et distance de jeu pour la démo ;
+- règles de score, collisions, vies et durée des parties ;
+- prix des skins et règles d'attribution des pièces ;
+- fréquence de simulation, format exact des commandes et transport des replays ;
+- mécanisme de session, identité joueur et protection contre les doubles crédits ;
+- emplacement et format de stockage des fantômes ;
+- confirmation de MediaPipe sur le matériel de la démo ;
+- répartition nominative, temps disponible et horaires de l'événement.
