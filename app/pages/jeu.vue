@@ -1,9 +1,24 @@
 <script setup lang="ts">
+import { nextLeaderboardRival, parseLeaderboard } from '~/utils/leaderboard'
+
+definePageMeta({ alias: ['/'] })
+
 const {
   camera, phase, mode, firstPerson, pseudo, state, result, countdown, pauseReason,
   rendererReady, rendererError, storageNotice, elapsedTime, cameraTracked, touch,
   advance, start, resume, pause, quit, onRendererError,
 } = useRunner()
+const { data: leaderboard, status: leaderboardStatus, refresh: refreshLeaderboard } = useFetch('/api/leaderboard', {
+  server: false,
+  lazy: true,
+  timeout: 7000,
+  retry: 0,
+  transform: parseLeaderboard,
+})
+const rival = computed(() => nextLeaderboardRival(leaderboard.value?.entries ?? [], state.value.score))
+watch(phase, (next, previous) => {
+  if ((previous === 'setup' || previous === 'finished') && next !== 'setup') void refreshLeaderboard({ dedupe: 'defer' })
+})
 const {
   video, phase: cameraPhase, error: cameraError, calibration, calibrationCountdown,
   calibrating, visible, movement,
@@ -38,17 +53,16 @@ function press(event: PointerEvent, lane?: -1 | 1, action?: 'jump' | 'crouch') {
   if (action) touch.action = action
 }
 
-useHead({ title: 'Jouer · Monad Blitz' })
+useHead({ title: 'Play · Subway Frauder' })
 </script>
 
 <template>
   <main class="runner-page min-h-dvh px-2 py-2 text-zinc-100 sm:px-3">
     <div class="w-full">
       <header class="mb-2 flex flex-wrap items-center justify-between gap-3 px-2">
-        <NuxtLink to="/" class="blitz-brand text-xl font-black tracking-tight">monad<span class="text-amber-300"> / </span>blitz</NuxtLink>
+        <NuxtLink to="/" class="text-xl font-black tracking-tight">Subway <span class="text-amber-300">Frauder</span></NuxtLink>
         <nav aria-label="Navigation principale" class="flex items-center gap-1 rounded-full bg-white/5 p-1 text-sm">
           <NuxtLink to="/jeu" aria-current="page" class="rounded-full bg-amber-300 px-5 py-2 font-semibold text-sky-950">Jouer</NuxtLink>
-          <NuxtLink to="/calibration" class="rounded-full px-5 py-2 text-zinc-300 hover:bg-white/5">Calibration</NuxtLink>
         </nav>
       </header>
 
@@ -60,27 +74,39 @@ useHead({ title: 'Jouer · Monad Blitz' })
               <template #fallback><div class="flex size-full items-center justify-center text-sm text-zinc-400">Préparation de la piste…</div></template>
             </ClientOnly>
 
-            <div class="runner-hud pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 bg-linear-to-b from-[#12354d] to-transparent p-5 pb-12 sm:p-7 sm:pb-14">
-              <div><p class="text-xs text-sky-200/70">Score</p><p class="mt-1 text-3xl font-semibold tabular-nums sm:text-4xl">{{ state.score.toLocaleString('fr-FR') }}</p></div>
-              <div class="flex gap-5 text-right sm:gap-8">
-                <div><p class="text-xs text-sky-200/70">Pièces</p><p class="mt-1 text-xl font-semibold tabular-nums text-amber-200"><span aria-hidden="true">◈ </span>{{ state.coins }}</p></div>
-                <div><p class="text-xs text-sky-200/70">Durée</p><p class="mt-1 text-xl font-semibold tabular-nums">{{ elapsedTime }}</p></div>
-                <div class="hidden sm:block"><p class="text-xs text-sky-200/70">Vies</p><p class="mt-2 flex gap-1.5" :aria-label="`${state.lives} vies restantes`"><span v-for="life in 3" :key="life" class="size-3 rounded-full" :class="life <= state.lives ? 'bg-[#8ce4cc]' : 'bg-white/15'" /></p></div>
+            <div class="runner-hud pointer-events-none absolute inset-x-0 top-0 grid grid-cols-2 items-start gap-4 bg-linear-to-b from-[#12354d] to-transparent p-4 pb-12 sm:p-7 sm:pb-14" lang="en">
+              <div class="min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200/80 sm:text-sm">Score</p>
+                <p class="mt-1 break-all text-[clamp(2.5rem,7vw,6rem)] font-black leading-none tracking-tight tabular-nums">{{ state.score.toLocaleString('en-US') }}</p>
+                <div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 sm:gap-x-8">
+                  <div><p class="text-xs text-sky-200/70">Coins</p><p class="mt-1 text-lg font-semibold tabular-nums text-amber-200"><span aria-hidden="true">◈ </span>{{ state.coins.toLocaleString('en-US') }}</p></div>
+                  <div><p class="text-xs text-sky-200/70">Time</p><p class="mt-1 text-lg font-semibold tabular-nums">{{ elapsedTime }}</p></div>
+                  <div><p class="text-xs text-sky-200/70">Lives</p><div class="mt-1 flex gap-1" role="img" :aria-label="`${state.lives} lives remaining`"><svg v-for="life in 3" :key="life" viewBox="0 0 24 24" fill="currentColor" class="size-6 sm:size-7" :class="life <= state.lives ? 'text-rose-400' : 'text-white/20'" aria-hidden="true"><path d="M12 21s-9-5.7-9-12a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.3-9 12-9 12Z" /></svg></div></div>
+                </div>
               </div>
+              <section aria-label="Leaderboard target" class="min-w-0 justify-self-end rounded-xl border border-white/15 bg-[#102e46]/85 p-3 text-right sm:min-w-56 sm:p-5">
+                <template v-if="leaderboardStatus === 'success' && leaderboard">
+                  <template v-if="rival">
+                    <p class="text-[10px] font-semibold uppercase tracking-widest text-sky-200/80 sm:text-xs">Next to beat</p>
+                    <p class="mt-2 max-w-48 break-words text-sm font-bold text-white sm:text-xl">{{ rival.pseudo || `Player ${rival.playerId.slice(0, 8)}` }}</p>
+                    <p class="mt-2 break-all text-[clamp(1.5rem,4vw,3.5rem)] font-black leading-none tracking-tight tabular-nums text-amber-300">{{ rival.gap.toLocaleString('en-US') }}</p>
+                    <p class="mt-2 text-xs text-sky-100/80">points to catch up</p>
+                  </template>
+                  <p v-else class="text-lg font-black text-amber-300 sm:text-3xl">Best score</p>
+                </template>
+                <p v-else class="max-w-48 text-xs text-sky-100/80">{{ leaderboardStatus === 'error' ? 'Leaderboard unavailable' : 'Loading leaderboard…' }}</p>
+              </section>
             </div>
 
-            <div v-if="phase === 'setup' && !rendererError" class="runner-setup absolute inset-x-5 bottom-24 text-center sm:bottom-28">
-              <p class="text-sm text-sky-200">Trois rails. Une ville à traverser.</p>
-              <h1 class="mx-auto mt-3 max-w-xl text-4xl font-black leading-[1.05] tracking-tight sm:text-6xl">Dans les rails.<br>À ta hauteur.</h1>
-              <p class="mx-auto mt-4 max-w-sm text-sm leading-relaxed text-zinc-300">Une course en première personne. Monte sur les trains, saute et esquive.</p>
-              <div class="mx-auto mt-5 max-w-sm rounded-2xl bg-[#102e46]/90 p-4 text-left shadow-xl backdrop-blur-sm">
-                <label for="pseudo" class="block text-sm text-zinc-200">Ton pseudo</label>
-                <input id="pseudo" v-model="pseudo" maxlength="20" autocomplete="nickname" placeholder="Coureur" class="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 outline-none focus:border-amber-300">
-                <button :disabled="!rendererReady || !!rendererError" class="runner-button mt-3 w-full" @click="start('camera')">{{ rendererReady ? 'Activer la caméra et jouer' : 'Préparation de la piste…' }}</button>
-                <button :disabled="!rendererReady || !!rendererError" class="mt-2 w-full py-1 text-sm text-zinc-200 disabled:opacity-40" @click="start('keyboard')">Essayer au clavier ou au tactile</button>
-                <p class="mt-2 text-xs leading-relaxed text-zinc-300">Cinq secondes pour reculer. Le départ est automatique.</p>
-              </div>
-            </div>
+            <section v-if="phase === 'setup' && !rendererError" class="runner-setup absolute inset-x-4 bottom-24 rounded-2xl border border-white/15 bg-[#102e46]/90 p-5 shadow-xl backdrop-blur-sm sm:left-7 sm:right-auto sm:w-80 sm:p-6" aria-labelledby="start-title">
+              <h1 id="start-title" class="text-2xl font-black tracking-tight">À toi de courir.</h1>
+              <p class="mt-2 text-sm leading-relaxed text-sky-100/80">Ton corps pilote la course.</p>
+              <label for="pseudo" class="mt-5 block text-sm text-zinc-200">Ton pseudo</label>
+              <input id="pseudo" v-model="pseudo" maxlength="20" autocomplete="nickname" placeholder="Coureur" class="mt-2 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 outline-none focus:border-amber-300">
+              <button :disabled="!rendererReady || !!rendererError" class="runner-button mt-4 w-full" @click="start('camera')">{{ rendererReady ? 'Activer la caméra et jouer' : 'Préparation de la piste…' }}</button>
+              <button :disabled="!rendererReady || !!rendererError" class="mt-2 w-full py-2 text-sm text-zinc-200 disabled:opacity-40" @click="start('keyboard')">Essayer au clavier ou au tactile</button>
+              <p class="mt-2 text-xs leading-relaxed text-zinc-300">Cinq secondes pour reculer, puis le départ est automatique.</p>
+            </section>
 
             <div v-if="phase === 'preparing' || phase === 'countdown'" class="absolute inset-0 flex flex-col items-center justify-center bg-[#12354d]/65 px-6 text-center backdrop-blur-[3px]" role="status">
               <template v-if="phase === 'countdown'">
@@ -117,7 +143,7 @@ useHead({ title: 'Jouer · Monad Blitz' })
 
             <div v-if="rendererError" class="absolute inset-0 flex items-center justify-center bg-[#12354d]/95 p-8 text-center"><p role="alert" class="max-w-md leading-relaxed text-rose-200">{{ rendererError }}</p></div>
 
-          <section aria-label="Retour caméra" class="absolute right-4 top-28 z-10 w-28 rounded-xl bg-[#12354d]/90 p-2 sm:w-40" :class="{ hidden: cameraPhase === 'idle' }">
+          <section aria-label="Retour caméra" class="absolute bottom-28 left-4 z-10 w-44 rounded-xl bg-[#12354d]/90 p-2 sm:bottom-20 sm:w-72 lg:w-88" :class="{ hidden: cameraPhase === 'idle' }">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs"><span class="font-medium">Ta position</span><span class="text-xs" :class="cameraTracked ? 'text-emerald-300' : 'text-zinc-500'">{{ posture }}</span></div>
             <div class="relative aspect-4/3 overflow-hidden rounded-xl border border-white/10 bg-[#12354d]">
               <video ref="video" autoplay playsinline muted aria-label="Aperçu miroir de la caméra" class="absolute inset-0 size-full -scale-x-100 object-contain" :class="{ 'opacity-0': cameraPhase === 'idle' }" />
@@ -164,7 +190,6 @@ useHead({ title: 'Jouer · Monad Blitz' })
           </section>
           <p v-if="!texturesLoaded" class="text-xs text-amber-200" role="status">Les textures détaillées n’ont pas chargé. Vérifie ta connexion puis recharge la page.</p>
           <p v-if="storageNotice" class="text-xs leading-relaxed text-amber-200" role="status">{{ storageNotice }}</p>
-          <NuxtLink to="/calibration" class="text-xs text-zinc-500 underline underline-offset-4 hover:text-sky-200">Ouvrir le diagnostic des mouvements</NuxtLink>
         </aside>
       </div>
     </div>
@@ -175,7 +200,7 @@ useHead({ title: 'Jouer · Monad Blitz' })
 .runner-page { background: #102e46; }
 .runner-hud, .runner-stage h1 { text-shadow: 0 2px 2px #163f58; }
 .runner-stage h1 { font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif; text-shadow: 0 3px 0 #163f58, 0 5px 18px #163f5860; }
-.runner-stage { height: calc(100dvh - 76px); min-height: 650px; }
+.runner-stage { height: calc(100dvh - 76px); min-height: 520px; }
 .runner-stage:fullscreen { width: 100vw; height: 100dvh; min-height: 0; border: 0; border-radius: 0; }
 .runner-control { border: 1px solid #ffffff45; border-radius: 0.6rem; background: #12354dcc; padding: 0.65rem 0.8rem; color: #fff; }
 .runner-control:hover { background: #24536e; }
@@ -190,8 +215,8 @@ useHead({ title: 'Jouer · Monad Blitz' })
 .obstacle-jump::after { content: ''; position: absolute; inset: 1.5rem 0 0.35rem; background: repeating-linear-gradient(125deg, #ed4b42 0 7px, #fff7db 7px 14px); border-radius: 0.1rem; }
 .obstacle-crouch::after { content: ''; position: absolute; inset: 0.5rem 0.1rem 0.1rem; border: solid #ed4b42; border-width: 0.6rem 0.17rem 0; }
 button:focus-visible, a:focus-visible { outline: 2px solid #ffcf45; outline-offset: 4px; }
-@media (max-width: 639px) { .runner-stage { height: calc(100dvh - 72px); min-height: 650px; } .runner-stage:fullscreen { height: 100dvh; min-height: 0; } }
-@media (max-height: 700px) { .runner-setup { bottom: 5rem; } .runner-setup h1 { font-size: 2rem; } .runner-setup > p { display: none; } .runner-setup > div { margin-top: 0.75rem; } }
-@media (max-height: 450px) { .runner-setup { bottom: 4rem; display: flex; justify-content: center; align-items: center; gap: 2rem; } .runner-setup h1 { margin: 0; } .runner-setup > div { margin: 0; max-width: 20rem; } }
+@media (max-width: 639px) { .runner-stage { height: calc(100dvh - 72px); min-height: 560px; } .runner-stage:fullscreen { height: 100dvh; min-height: 0; } }
+@media (max-height: 600px) { .runner-setup { bottom: 4.5rem; padding: 1rem; } .runner-setup > p { display: none; } .runner-setup label { margin-top: 0.75rem; } }
+@media (max-height: 450px) { .runner-setup { bottom: 4rem; max-height: calc(100dvh - 9rem); overflow-y: auto; } }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
 </style>

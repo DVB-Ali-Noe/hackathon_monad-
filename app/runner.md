@@ -1,8 +1,10 @@
-# Front jouable
+# Subway Frauder — Front jouable
 
-- `/jeu` : préparation, course et résultat local.
-- `/calibration` : diagnostic conservé, accessible dans les onglets et depuis
-  l’accueil. La navigation arrête la webcam de l’écran quitté.
+- `/` et `/jeu` : même écran de préparation, course et résultat local. La piste
+  est visible dès l’ouverture, avec un panneau de démarrage compact ; aucune
+  page de présentation ni redirection intermédiaire.
+- `/calibration` : diagnostic conservé à cette adresse, sans bouton dans
+  l’interface du jeu. La navigation arrête la webcam de l’écran quitté.
 
 La course n’a plus de durée maximale. Le chrono affiche le temps joué, la pause
 le fige et la perte des trois vies termine la partie. Le parcours se génère
@@ -82,14 +84,25 @@ ne sont pas importés.
 
 Les résultats restent locaux et les commandes restent disponibles pour le rejeu.
 Le fantôme a été retiré à la demande de Noé ; seul le pseudo est mémorisé.
-Il n’y a ni classement inventé ni envoi serveur.
+Les résultats locaux ne sont pas envoyés au serveur dans ce dossier Front.
 Les règles et l’API de rejeu sont dans [shared/game/README.md](../shared/game/README.md).
 
-Suite souhaitée par Noé : enregistrer les 25 meilleurs scores dans un smart
-contract et afficher à droite le nom du joueur à rattraper, accompagné de
-l’écart entre son score et le score courant. Cet écart diminue pendant la course ;
-le score enregistré reste fixe. Ce classement est différé et nécessite le
-raccordement au backend/contrat, hors de ce lot frontend.
+Le score agrandi et les vies en cœurs restent visibles pendant la course. À droite,
+« Next to beat » indique le joueur au score immédiatement supérieur et l’écart
+avec le score courant. L’écart diminue, puis la cible change dès que son score est
+atteint ; le score enregistré reste fixe. Sans score supérieur, le panneau affiche
+« Best score », y compris pour un classement vide chargé avec succès.
+
+Le front lit `GET /api/leaderboard` à l’ouverture et au lancement d’une partie,
+sans bloquer le jeu ni interroger le serveur à chaque tick. Le format consommé
+est celui du backend intégré dans `dev` : `{ blockNumber, entries }`, avec
+`{ playerId, pseudo, score }` et des scores décimaux en chaînes. Les écarts sont
+calculés en `BigInt`. Une erreur ou une réponse invalide affiche « Leaderboard
+unavailable » plutôt qu’un faux record ; aucun joueur de démonstration n’est injecté.
+La route serveur n’est pas présente dans ce dossier Front : les données réelles
+nécessitent le backend intégré. Lors de l’intégration, conserver la session et la
+soumission de `useRunBackend`, et réutiliser son classement et l’identité joueur
+pour ce panneau, sans doubler le chargement du classement.
 
 ## Essai réel restant
 
